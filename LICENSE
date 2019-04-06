@@ -19,3 +19,100 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---------------------------------------------------------------------------
+* choreonoid
+https://github.com/s-nakaoka/choreonoid
+
+MIT License (see https://github.com/s-nakaoka/choreonoid/blob/master/LICENSE)
+
+---------------------------------------------------------------------------
+* Eigen
+http://eigen.tuxfamily.org/index.php?title=Main_Page
+
+MPL2 (see http://eigen.tuxfamily.org/index.php?title=Main_Page#License)
+
+---------------------------------------------------------------------------
+* emscripten
+https://github.com/emscripten-core/emscripten
+
+MIT License (see https://github.com/emscripten-core/emscripten/blob/incoming/LICENSE)
+
+---------------------------------------------------------------------------
+* glew
+https://github.com/nigels-com/glew
+
+The source code is licensed under the Modified BSD License, the Mesa 3-D License (MIT) and the Khronos License (MIT).
+(see https://github.com/nigels-com/glew/blob/master/LICENSE.txt)
+
+---------------------------------------------------------------------------
+* glfw
+https://github.com/glfw/glfw
+
+zlib License (see https://github.com/glfw/glfw/blob/master/LICENSE.md)
+   
+---------------------------------------------------------------------------
+* glm
+https://github.com/g-truc/glm
+
+Happy Bunny License (Modified MIT) or the MIT License. (see https://github.com/g-truc/glm/blob/master/manual.md#section0)
+
+---------------------------------------------------------------------------
+* nanosvg
+https://github.com/memononen/nanosvg
+
+zlib license (see https://github.com/memononen/nanosvg/blob/master/LICENSE.txt)
+
+---------------------------------------------------------------------------
+ * nanovg
+ https://github.com/memononen/nanovg
+ 
+ zlib license (see https://github.com/memononen/nanovg/blob/master/LICENSE.txt)
+ 
+ ---------------------------------------------------------------------------
+* Open Dynamics Engine
+https://www.ode.org/
+
+BSD-style license (see https://www.ode.org/)
+
+ ---------------------------------------------------------------------------
+ * RobotoMono (Google Fonts Files)
+ https://github.com/google/fonts/tree/master/apache/robotomono
+ 
+ Apache License Version 2.0 (see https://github.com/google/fonts/blob/master/apache/robotomono/LICENSE.txt)
+  
+---------------------------------------------------------------------------
+ * stb
+ https://github.com/nothings/stb
+
+single-file public domain (or MIT licensed) libraries for C/C++
+
+---------------------------------------------------------------------------
+* stl_parser
+https://github.com/dillonhuff/stl_parser
+
+MIT License (see https://github.com/dillonhuff/stl_parser/blob/master/LICENSE)
+
+---------------------------------------------------------------------------
+* Thomas Dalling
+http://tomdalling.com/
+
+ Copyright 2012 Thomas Dalling - http://tomdalling.com/
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+ http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ 
+---------------------------------------------------------------------------
+* tinyobjloader
+ https://github.com/syoyo/tinyobjloader
+ 
+ MIT License (see https://github.com/syoyo/tinyobjloader/blob/master/LICENSE)

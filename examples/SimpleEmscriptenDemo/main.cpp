@@ -1,41 +1,15 @@
-# ptgl
-ptgl is a C++ graphics library for prototyping.
-
-## Installation
-### Requirements
-* Ubuntu 18.04
-* C++17  
-
-### Install dependencies
-~~~
-apt-get install libeigen3-dev
-apt-get install libglfw3-dev
-apt-get install libglew-dev
-~~~
-### Build
-~~~
-mkdir build
-cd build  
-cmake ..  
-make  
-~~~
-### Install
-~~~
-make install
-~~~
-
-
-## Example
-~~~C++
 #include "ptgl/Core/QuickGraphicsView.h"
-#include "ptgl/Driver/GLFWGraphicsDriver.h"
+#include "ptgl/Driver/EMGLUTGraphicsDriver.h"
 #include "ptgl/Handle/TransformHandle.h"
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#endif  // EMSCRIPTEN
 
 int main(int argc, char* argv[])
 {
-    ptgl::GraphicsDriverPtr driver = std::make_unique<ptgl::GLFWGraphicsDriver>();
+    ptgl::GraphicsDriverPtr driver = std::make_unique<ptgl::EMGLUTGraphicsDriver>(argc, argv);
     ptgl::QuickGraphicsView view(std::move(driver));
-    view.setWindowTitle("SimpleDemo");
+    view.setWindowTitle("SimpleEmscriptenDemo");
 
     ptgl::handle::TransformHandlePtr handle = std::make_shared<ptgl::handle::TransformHandle>();
     view.addGraphicsItem(handle);
@@ -57,13 +31,12 @@ int main(int argc, char* argv[])
     view.initialize();
     view.execute();
 
+#ifdef EMSCRIPTEN
+#else   // EMSCRIPTEN
     while (!view.terminated()) {
 
     }
+#endif  // EMSCRIPTEN
 
     return 0;
 }
-~~~
-
-## License
-Licensed under the MIT license. see LICENSE for details.

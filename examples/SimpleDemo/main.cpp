@@ -1,32 +1,3 @@
-# ptgl
-ptgl is a C++ graphics library for prototyping.
-
-## Installation
-### Requirements
-* Ubuntu 18.04
-* C++17  
-
-### Install dependencies
-~~~
-apt-get install libeigen3-dev
-apt-get install libglfw3-dev
-apt-get install libglew-dev
-~~~
-### Build
-~~~
-mkdir build
-cd build  
-cmake ..  
-make  
-~~~
-### Install
-~~~
-make install
-~~~
-
-
-## Example
-~~~C++
 #include "ptgl/Core/QuickGraphicsView.h"
 #include "ptgl/Driver/GLFWGraphicsDriver.h"
 #include "ptgl/Handle/TransformHandle.h"
@@ -63,7 +34,3 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-~~~
-
-## License
-Licensed under the MIT license. see LICENSE for details.
