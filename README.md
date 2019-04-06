@@ -1,6 +1,8 @@
 # ptgl
 ptgl is a C++ graphics library for prototyping.
 
+![screen_shot](https://raw.githubusercontent.com/wiki/tsumehashi/ptgl/images/readme/ScreenshotSimpleDemo.png "screen_shot")
+
 ## Installation
 ### Requirements
 * Ubuntu 18.04
