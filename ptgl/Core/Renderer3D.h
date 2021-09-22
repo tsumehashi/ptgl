@@ -84,20 +84,68 @@ public:
     void getTextColor(double& r, double& g, double& b);
 
     // draw functions
+    using vec3d = std::array<double, 3>;
+    using vec9d = std::array<double, 9>;
+
+    const double* getData(const double* x) const { return x; }
+    template <typename T> auto getData(const T& x) const -> decltype(static_cast<const double*>(std::data(x))) { return std::data(x); }
+
     void drawPoint(const double pos[3]);
+    template <typename T = vec3d>
+    void drawPoint(const T& pos) { drawPoint(getData(pos)); }
+
     void drawLine(const double pos1[3], const double pos2[3]);
+    template <typename T = vec3d, typename U = vec3d>
+    void drawLine(const T& pos1, const U& pos2) { drawLine(getData(pos1), getData(pos2)); }
+
     void drawBox(const double pos[3], const double R[9], const double sides[3]);
+    template <typename T = vec3d, typename U = vec9d, typename V = vec3d>
+    void drawBox(const T& pos, const U& R, const V& sides) { drawBox(getData(pos), getData(R), getData(sides)); }
+
     void drawSphere(const double pos[3], const double R[9], double r);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawSphere(const T& pos, const U& R, double r) { drawSphere(getData(pos), getData(R), r); }
+
     void drawCylinder(const double pos[3], const double R[9], double length, double radius, bool cap = true);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawCylinder(const T& pos, const U& R, double length, double radius, bool cap = true) { drawCylinder(getData(pos), getData(R), length, radius, cap); }
+
     void drawCapsule(const double pos[3], const double R[9], double length, double radius);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawCapsule(const T& pos, const U& R, double length, double radius) { drawCapsule(getData(pos), getData(R), length, radius); }
+
     void drawCone(const double pos[3], const double R[9], double length, double radius);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawCone(const T& pos, const U& R, double length, double radius) { drawCone(getData(pos), getData(R), length, radius); }
+
     void drawRing(const double pos[3], const double R[9], double length, double outer_radius, double inner_radius);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawRing(const T& pos, const U& R, double length, double outer_radius, double inner_radius) { drawRing(getData(pos), getData(R), length, outer_radius, inner_radius); }
+
     void drawCircle(const double pos[3], const double R[9], double r);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawCircle(const T& pos, const U& R, double r) { drawCircle(getData(pos), getData(R), r); }
+
     void drawRingCircle(const double pos[3], const double R[9], double outer_radius, double inner_radius);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawRingCircle(const T& pos, const U& R, double length, double outer_radius, double inner_radius) { drawRingCircle(getData(pos), getData(R), length, outer_radius, inner_radius); }
+
     void drawRect(const double pos[3], const double R[9], double xw, double yh);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawRect(const T& pos, const U& R, double xw, double yh) { drawRect(getData(pos), getData(R), xw, yh); }
+
     void drawArrow(const double pos1[3], const double pos2[3], double r);
+    template <typename T = vec3d, typename U = vec3d>
+    void drawArrow(const T& pos1, const U& pos2, double r) { drawArrow(getData(pos1), getData(pos2), r); }
+
     void drawArrowCone(const double pos1[3], const double pos2[3], double r);
+    template <typename T = vec3d, typename U = vec3d>
+    void drawArrowCone(const T& pos1, const U& pos2, double r) { drawArrowCone(getData(pos1), getData(pos2), r); }
+
     void drawAxis(const double pos[3], const double R[9], double length);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawAxis(const T& pos, const U& R, double length) { drawAxis(getData(pos), getData(R), length); }
+
 //    void drawGrid(double w, int div);
 
     void drawPoints(const double* p, int numpoints);
@@ -136,6 +184,8 @@ public:
 
     void drawVertex(const VertexList& vertices, const IndexList& indices);
     void drawVertex(const double pos[3], const double R[9], const VertexList& vertices, const IndexList& indices);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawVertex(const T& pos, const U& R, const VertexList& vertices, const IndexList& indices) { drawVertex(getData(pos), getData(R), vertices, indices); }
 
     // transform stack
     void pushMatrix() { tf_.push(); }

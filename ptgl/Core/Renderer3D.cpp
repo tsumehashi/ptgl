@@ -343,7 +343,7 @@ void Renderer3D::drawPoints(const double* p, int numpoints)
     updateGeneralVBO(&generalVertexBuffer_[0][0], 3*generalVertexBuffer_.size());
 
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
-    shaderProgram()->setParameter(unifLightEffectRateLocation_, tf_.transformation().matrix());
+    shaderProgram()->setParameter(unifModelMatrixLocation_, tf_.transformation().matrix());
     shaderProgram()->setParameter(unifLightEffectRateLocation_, 0.0);    // disable light
     shaderProgram()->setParameter(unifPointSizeLocation_, pointSize_);    // set point size
 
