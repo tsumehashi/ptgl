@@ -157,6 +157,22 @@ public:
     void drawLine(double x1, double y1, double z1, double x2, double y2, double z2);
 //    void drawRect(double x1, double y1, double x2, double y2);
 
+    void beginDrawPoints();
+    void addDrawPoints(const double* p, int numpoints);
+    void addDrawPoints(double x, double y, double z);
+    template <typename T = vec3d>
+    void addDrawPoints(const T& pos1) { addDrawPoints(getData(pos1), 1); }
+    void endDrawPoinhts();
+
+    template <typename T>
+    void drawPoints(const T& points) {
+        beginDrawPoints();
+        for (const auto& p : points) {
+            addDrawPoints(p);
+        }
+        endDrawPoinhts();
+    }
+
     void drawWorldGrid();
     void drawWorldAxis(double length = 10);
 

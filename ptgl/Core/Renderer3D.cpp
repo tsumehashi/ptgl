@@ -396,6 +396,42 @@ void Renderer3D::drawLine(double x1, double y1, double z1, double x2, double y2,
     drawLines(p, 2);
 }
 
+void Renderer3D::beginDrawPoints()
+{
+    generalVertexBuffer_.clear();
+}
+
+void Renderer3D::addDrawPoints(const double* p, int numpoints)
+{
+    for (int i = 0; i < numpoints; ++i) {
+        generalVertexBuffer_.push_back({{(GLfloat)p[3*i], (GLfloat)p[3*i+1], (GLfloat)p[3*i+2]}});
+    }
+}
+
+void Renderer3D::addDrawPoints(double x, double y, double z)
+{
+    generalVertexBuffer_.push_back({{(GLfloat)x, (GLfloat)y, (GLfloat)z}});
+}
+
+void Renderer3D::endDrawPoinhts()
+{
+    if (generalVertexBuffer_.empty()) {
+        return;
+    }
+
+    updateGeneralVBO(&generalVertexBuffer_[0][0], 3*generalVertexBuffer_.size());
+
+    shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+    shaderProgram()->setParameter(unifModelMatrixLocation_, tf_.transformation().matrix());
+    shaderProgram()->setParameter(unifLightEffectRateLocation_, 0.0);    // disable light
+    shaderProgram()->setParameter(unifPointSizeLocation_, pointSize_);    // set point size
+
+    drawVertexBufferObject(generalVBO_.vertexVBO(), attrVertexLocation_, GL_POINTS, 0, generalVertexBuffer_.size());
+
+    shaderProgram()->setParameter(unifLightEffectRateLocation_, 1.0);    // enable light
+    shaderProgram()->setParameter(unifPointSizeLocation_, 1.0);            // disable point size
+}
+
 void Renderer3D::drawWorldGrid()
 {
     shaderProgram()->setParameter(unifModelMatrixLocation_, Eigen::Matrix4d(Eigen::Matrix4d::Identity()));
