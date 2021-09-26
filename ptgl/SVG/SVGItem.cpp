@@ -195,8 +195,8 @@ void renderSVGShapeSub(ptgl::Renderer2D* r, SVGShapePtr svgShape, bool setNvgBeg
         nvgBeginFrame(vg, width, height, pixelRatio);
     }
 
-    nvgFillColor(vg, NVGcolor{(float)fillColor[0], (float)fillColor[1], (float)fillColor[2], (float)fillColor[3]});
-    nvgStrokeColor(vg, NVGcolor{(float)strokeColor[0], (float)strokeColor[1], (float)strokeColor[2], (float)strokeColor[3]});
+    nvgFillColor(vg, NVGcolor{ .rgba = {(float)fillColor[0], (float)fillColor[1], (float)fillColor[2], (float)fillColor[3]}});
+    nvgStrokeColor(vg, NVGcolor{ .rgba = {(float)strokeColor[0], (float)strokeColor[1], (float)strokeColor[2], (float)strokeColor[3]}});
 
     nvgStrokeWidth(vg, shape->strokeWidth);
 

@@ -132,7 +132,7 @@ void SpinBox::render2DScene(ptgl::Renderer2D* r)
     r->setRectMode(ptgl::Renderer2D::Mode::Corner);
     r->drawRect(x,y,w,h);
 
-    int localX = 0;
+//    int localX = 0;
 
     // [Value]
 #if 0
@@ -152,7 +152,7 @@ void SpinBox::render2DScene(ptgl::Renderer2D* r)
     int sdy = (h - sph)/2+sph-spinBoxSize_;
     spinUpButton_->setLocalPos(sux, suy);
     spinDownButton_->setLocalPos(sux, sdy);
-    localX += spinBoxSize_;
+//    localX += spinBoxSize_;
 }
 
 void SpinBox::renderPicking2DScene(ptgl::Renderer2D* r)

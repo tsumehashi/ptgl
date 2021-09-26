@@ -55,7 +55,7 @@ void TextRenderer::setTextColor(const std::array<double, 4>& rgba)
 void TextRenderer::setTextColor(double r, double b, double g, double a)
 {
     textColor_ = {{r,g,b,a}};
-    nvgFillColor(nvgContext_, NVGcolor{(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]});
+    nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]}});
 }
 
 void TextRenderer::setTextAlign(Align align, VAlign valign)
@@ -153,7 +153,7 @@ void TextRenderer::drawText(int x, int y, const std::string& text, const std::ar
     // draw background box
     nvgBeginPath(nvgContext_);
 
-    nvgFillColor(nvgContext_, NVGcolor{(float)backgroundBoxColor[0], (float)backgroundBoxColor[1], (float)backgroundBoxColor[2], (float)backgroundBoxColor[3]});
+    nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)backgroundBoxColor[0], (float)backgroundBoxColor[1], (float)backgroundBoxColor[2], (float)backgroundBoxColor[3]}});
 
     nvgMoveTo(nvgContext_, x1, y1);
     nvgLineTo(nvgContext_, x2, y2);
@@ -164,7 +164,7 @@ void TextRenderer::drawText(int x, int y, const std::string& text, const std::ar
     nvgFill(nvgContext_);
 
     // draw text
-    nvgFillColor(nvgContext_, NVGcolor{(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]});
+    nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]}});
     drawText(x, y, text);
 }
 

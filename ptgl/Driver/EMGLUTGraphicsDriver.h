@@ -199,7 +199,7 @@ void EMGLUTGraphicsDriver::glutMousePressEvent(int button , int state, int x , i
         if ((button == 3) || (button == 4)) {
             // wheel event
             auto event = driver->getGraphicsViewWheelEvent();
-            int sgn = (button == 3) ? 1 : -1;
+            int sgn = (button == 3) ? -1 : 1;
             int delta = 80;
             event->setWheelEvent(x, y, sgn * delta);
 

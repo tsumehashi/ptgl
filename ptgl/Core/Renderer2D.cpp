@@ -388,7 +388,7 @@ void Renderer2D::setFillColor(double r, double g, double b, double a)
     fill_ = true;
 
     if (!isPickingRenderMode()) {
-        nvgFillColor(nvgContext_, NVGcolor{(float)fillColor_[0], (float)fillColor_[1], (float)fillColor_[2], (float)fillColor_[3]});
+        nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)fillColor_[0], (float)fillColor_[1], (float)fillColor_[2], (float)fillColor_[3]}});
     }
 }
 
@@ -413,7 +413,7 @@ void Renderer2D::setStrokeColor(double r, double g, double b, double a)
     stroke_ = true;
 
     if (!isPickingRenderMode()) {
-        nvgStrokeColor(nvgContext_, NVGcolor{(float)strokeColor_[0], (float)strokeColor_[1], (float)strokeColor_[2], (float)strokeColor_[3]});
+        nvgStrokeColor(nvgContext_, NVGcolor{ .rgba = {(float)strokeColor_[0], (float)strokeColor_[1], (float)strokeColor_[2], (float)strokeColor_[3]}});
     }
 }
 
@@ -541,12 +541,12 @@ void Renderer2D::drawText(int x, int y, const std::string& str)
     nvgBeginPath(nvgContext_);
     nvgFontFace(nvgContext_, fontName_.c_str());
 
-    nvgFillColor(nvgContext_, NVGcolor{(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]});
+    nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)textColor_[0], (float)textColor_[1], (float)textColor_[2], (float)textColor_[3]}});
     nvgFontSize(nvgContext_, textSize);
     nvgText(nvgContext_, p(0), p(1) - yoffset, str.c_str(), NULL);
 
     // restore FillColor
-    nvgFillColor(nvgContext_, NVGcolor{(float)fillColor_[0], (float)fillColor_[1], (float)fillColor_[2], (float)fillColor_[3]});
+    nvgFillColor(nvgContext_, NVGcolor{ .rgba = {(float)fillColor_[0], (float)fillColor_[1], (float)fillColor_[2], (float)fillColor_[3]}});
 }
 
 // Image
@@ -751,8 +751,8 @@ void Renderer2D::setPickColor(const std::array<double, 4>& color)
     pickColor_ = color;
 
     if (isPickingRenderMode()) {
-        nvgFillColor(pickingNvgContext_, NVGcolor{(float)pickColor_[0], (float)pickColor_[1], (float)pickColor_[2], (float)pickColor_[3]});
-        nvgStrokeColor(pickingNvgContext_, NVGcolor{(float)pickColor_[0], (float)pickColor_[1], (float)pickColor_[2], (float)pickColor_[3]});
+        nvgFillColor(pickingNvgContext_, NVGcolor{ .rgba = {(float)pickColor_[0], (float)pickColor_[1], (float)pickColor_[2], (float)pickColor_[3]}});
+        nvgStrokeColor(pickingNvgContext_, NVGcolor{ .rgba = {(float)pickColor_[0], (float)pickColor_[1], (float)pickColor_[2], (float)pickColor_[3]}});
     }
 }
 

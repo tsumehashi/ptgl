@@ -28,6 +28,8 @@ public:
     ptgl::svg::SVGGraphics2DItemPtr svgGraphics2DItem() { return svgGraphics2DItem_; }
 
     void setClickedFillColor(const std::string& name, const std::array<double, 4>& c);
+
+    using Widget::setPickable;
     void setPickable(const std::string& name, bool on);
 
     void setChecked(const std::string&, bool checked);
