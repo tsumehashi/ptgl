@@ -186,6 +186,24 @@ void TextRenderer::drawText(double x, double y, double z, const std::string& tex
     drawText(tp.x(), tp.y(), text, backgroundBoxColor, spacing);
 }
 
+void TextRenderer::drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text)
+{
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x() + offset_x, tp.y() + offset_y, text);
+}
+
+void TextRenderer::drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor)
+{
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x() + offset_x, tp.y() + offset_y, text, backgroundBoxColor);
+}
+
+void TextRenderer::drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing)
+{
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x() + offset_x, tp.y() + offset_y, text, backgroundBoxColor, spacing);
+}
+
 int TextRenderer::windowWidth() const
 {
     return graphicsView_->width();

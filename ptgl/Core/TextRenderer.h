@@ -48,6 +48,10 @@ public:
     void drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor);
     void drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing);
 
+    void drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text);
+    void drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor);
+    void drawText(int offset_x, int offset_y, double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing);
+
     int windowWidth() const;
     int windowHeight() const;
 
