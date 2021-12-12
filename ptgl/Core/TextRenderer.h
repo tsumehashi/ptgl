@@ -41,13 +41,12 @@ public:
     int textHeight() const;
 
     void drawText(int x, int y, const std::string& text);
-
-#if 0    // todo
-    void drawText(double x, double y, double z, const std::string& text);
-#endif
-
     void drawText(int x, int y, const std::string& text, const std::array<double, 4>& backgroundBoxColor);
     void drawText(int x, int y, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing);
+
+    void drawText(double x, double y, double z, const std::string& text);
+    void drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor);
+    void drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing);
 
     int windowWidth() const;
     int windowHeight() const;

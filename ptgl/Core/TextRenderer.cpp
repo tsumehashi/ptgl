@@ -168,12 +168,23 @@ void TextRenderer::drawText(int x, int y, const std::string& text, const std::ar
     drawText(x, y, text);
 }
 
-#if 0    // todo
 void TextRenderer::drawText(double x, double y, double z, const std::string& text)
 {
-
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x(), tp.y(), text);
 }
-#endif
+
+void TextRenderer::drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor)
+{
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x(), tp.y(), text, backgroundBoxColor);
+}
+
+void TextRenderer::drawText(double x, double y, double z, const std::string& text, const std::array<double, 4>& backgroundBoxColor, int spacing)
+{
+    Eigen::Vector3d tp = graphicsView_->camera()->project2D(x, y, z);
+    drawText(tp.x(), tp.y(), text, backgroundBoxColor, spacing);
+}
 
 int TextRenderer::windowWidth() const
 {
