@@ -87,17 +87,19 @@ void SpinBox::setSize(int width, int height)
     textEdit_->setLocalPos(0, 0);
 }
 
-void SpinBox::setRange(int min, int max)
+AbstractSlider& SpinBox::setRange(int min, int max)
 {
     AbstractSlider::setRange(min, max);
     spinUpButton_->setToolTipText("Range[" + std::to_string(this->minimum()) + ", " + std::to_string(this->maximum()) + "]");
     spinDownButton_->setToolTipText("Range" + std::to_string(this->minimum()) + ", " + std::to_string(this->maximum()) + "]");
+    return *this;
 }
 
-void SpinBox::setValue(int value, bool callCallback)
+AbstractSlider& SpinBox::setValue(int value, bool callCallback)
 {
     AbstractSlider::setValue(value, callCallback);
     textEdit_->setText(std::to_string(this->value()), false);
+    return *this;
 }
 
 void SpinBox::onSpinUpButtonClicled(bool)

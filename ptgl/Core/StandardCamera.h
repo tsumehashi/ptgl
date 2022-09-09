@@ -26,14 +26,23 @@ public:
     virtual void mouseReleaseEvent(MouseEvent* e) override;
     virtual void wheelEvent(WheelEvent* e) override;
 
+    void setScrollScale(double s);
+    double scrollScale() const { return scrollScale_; }
+
+    void setMoveScale(double s);
+    double moveScale() const { return moveScale_; }
+
+    void setDirectionScale(double s);
+    double directionScale() const { return directionScale_; }
+
 protected:
     void setCamera();
     void setCamera(double x, double y, double z, double h, double p, double r);
 
     void wrapCameraAngles();
-    void viewMotion1(int dx, int dy);
-    void viewMotion2(int dx, int dy);
-    void viewMotion3(int dx, int dy);
+    void viewMotion1(double dx, double dy);
+    void viewMotion2(double dx, double dy);
+    void viewMotion3(double dx, double dy);
 
     int px_ = 0;
     int py_ = 0;
@@ -44,6 +53,10 @@ protected:
     bool allowThrow_ = false;
     bool thrown_ = false;
     int motion_ = 0;
+
+    double scrollScale_ = 1.0;
+    double moveScale_ = 1.0;
+    double directionScale_ = 1.0;
 
     Eigen::Vector3d view_hpr_ = Eigen::Vector3d::Zero();    // heading(yaw), pitch, roll (degrees)
     Eigen::Vector3d view_xyz_ = Eigen::Vector3d::Zero();    // position x,y,z

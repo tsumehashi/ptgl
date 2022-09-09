@@ -16,20 +16,20 @@ public:
     AbstractSlider(const std::string& text);
     virtual ~AbstractSlider();
 
-    virtual void setText(const std::string& text);
+    virtual AbstractSlider& setText(const std::string& text);
 
     const std::string& text() const { return text_; }
 
-    void setMaximum(int max);
-    void setMinimum(int min);
-    virtual void setRange(int min, int max);
+    AbstractSlider& setMaximum(int max);
+    AbstractSlider& setMinimum(int min);
+    virtual AbstractSlider& setRange(int min, int max);
     int maximum() const { return maximum_; }
     int minimum() const { return minimum_; }
 
-    virtual void setValue(int value, bool callCallback = true);
+    virtual AbstractSlider& setValue(int value, bool callCallback = true);
     int value() const { return value_; }
 
-    void setOnValueChangedFunction(std::function<void (int)> func);
+    AbstractSlider& setOnValueChangedFunction(std::function<void (int)> func);
 
 protected:
     std::string text_;

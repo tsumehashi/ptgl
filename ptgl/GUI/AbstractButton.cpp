@@ -19,20 +19,23 @@ AbstractButton::~AbstractButton()
 
 }
 
-void AbstractButton::setCheckable(bool on)
+AbstractButton& AbstractButton::setCheckable(bool on)
 {
     checkable_ = on;
+    return *this;
 }
 
-void AbstractButton::setDown(bool down)
+AbstractButton& AbstractButton::setDown(bool down)
 {
     down_ = down;
     checked_ = down;
+    return *this;
 }
 
-void AbstractButton::setText(const std::string& text)
+AbstractButton& AbstractButton::setText(const std::string& text)
 {
     text_ = text;
+    return *this;
 }
 
 void AbstractButton::click()
@@ -51,24 +54,28 @@ void AbstractButton::toggle()
 
 }
 
-void AbstractButton::setOnClickedFunction(std::function<void (bool)> func)
+AbstractButton& AbstractButton::setOnClickedFunction(std::function<void (bool)> func)
 {
     onClickedFunc_ = func;
+    return *this;
 }
 
-void AbstractButton::setOnPressedFunction(std::function<void ()> func)
+AbstractButton& AbstractButton::setOnPressedFunction(std::function<void ()> func)
 {
     onPressedFunc_ = func;
+    return *this;
 }
 
-void AbstractButton::setOnReleasedFunction(std::function<void ()> func)
+AbstractButton& AbstractButton::setOnReleasedFunction(std::function<void ()> func)
 {
     onReleasedFunc_ = func;
+    return *this;
 }
 
-void AbstractButton::setOnToggledFunction(std::function<void (bool)> func)
+AbstractButton& AbstractButton::setOnToggledFunction(std::function<void (bool)> func)
 {
     onToggledFunc_ = func;
+    return *this;
 }
 
 void AbstractButton::mousePressEvent(ptgl::GraphicsItemMouseEvent* /*e*/)

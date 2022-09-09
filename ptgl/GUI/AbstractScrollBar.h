@@ -14,13 +14,16 @@ public:
     AbstractScrollBar();
     virtual ~AbstractScrollBar();
 
-    virtual void setScrolledAreaSize(int size) { scrolledAreaSize_ = size; }
+    virtual AbstractScrollBar& setScrolledAreaSize(int size) {
+        scrolledAreaSize_ = size;
+        return *this;
+    }
     int scrolledAreaSize() const { return scrolledAreaSize_; }
 
-    virtual void setScrollValue(int value);
+    virtual AbstractScrollBar& setScrollValue(int value);
     int scrollValue() const { return scrollValue_; }
 
-    virtual void setScrollDeltaValue(int delta);
+    virtual AbstractScrollBar& setScrollDeltaValue(int delta);
     int scrollDeltaValue() const { return scrollDeltaValue_; }
 
     virtual int scrollAreaSize() const;

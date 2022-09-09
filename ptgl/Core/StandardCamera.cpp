@@ -70,11 +70,11 @@ void StandardCamera::mouseMoveEvent(MouseEvent* event)
 
         break;
     case MouseEvent::MouseButton::RightButton:
-        viewMotion1(dx, dy);
+        viewMotion1(directionScale_*dx, directionScale_*dy);
         motion_ = 1;
         break;
     case MouseEvent::MouseButton::MiddleButton:
-        viewMotion3(dx, dy);
+        viewMotion3(moveScale_*dx, moveScale_*dy);
         motion_ = 3;
         break;
     default:
@@ -96,13 +96,28 @@ void StandardCamera::wheelEvent(WheelEvent* event)
 {
     int numDegrees = event->delta() / 8;
     int numTicks = numDegrees * 2;
-    viewMotion2(0, numTicks); // vertical scroll
+    viewMotion2(0, scrollScale_ * numTicks); // vertical scroll
 
     setCamera();
 }
 
+void StandardCamera::setScrollScale(double s)
+{
+    scrollScale_ = s;
+}
+
+void StandardCamera::setMoveScale(double s)
+{
+    moveScale_ = s;
+}
+
+void StandardCamera::setDirectionScale(double s)
+{
+    directionScale_ = s;
+}
+
 // left
-void StandardCamera::viewMotion1(int dx, int dy)
+void StandardCamera::viewMotion1(double dx, double dy)
 {
     view_hpr_(0) += dx * 0.5;
     view_hpr_(1) += dy * 0.5;
@@ -111,7 +126,7 @@ void StandardCamera::viewMotion1(int dx, int dy)
 }
 
 // rigth
-void StandardCamera::viewMotion2(int dx, int dy)
+void StandardCamera::viewMotion2(double dx, double dy)
 {
     double side = 0.01 * dx;
     double fwd  = 0.01 * dy;
@@ -125,7 +140,7 @@ void StandardCamera::viewMotion2(int dx, int dy)
 }
 
 // mid
-void StandardCamera::viewMotion3(int dx, int dy)
+void StandardCamera::viewMotion3(double dx, double dy)
 {
     double side = 0.01 * dx;
     double fwd  = 0.0;

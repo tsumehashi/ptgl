@@ -13,7 +13,7 @@ AbstractScrollBar::~AbstractScrollBar() {
 
 }
 
-void AbstractScrollBar::setScrollValue(int value)
+AbstractScrollBar& AbstractScrollBar::setScrollValue(int value)
 {
     scrollValue_ = value;
     // clamp
@@ -22,11 +22,13 @@ void AbstractScrollBar::setScrollValue(int value)
     } else if (scrollValue_ > (scrolledAreaSize_ - scrollAreaSize())) {
         scrollValue_ = scrolledAreaSize_ - scrollAreaSize();
     }
+    return *this;
 }
 
-void AbstractScrollBar::setScrollDeltaValue(int delta)
+AbstractScrollBar& AbstractScrollBar::setScrollDeltaValue(int delta)
 {
     scrollDeltaValue_ = delta;
+    return *this;
 }
 
 int AbstractScrollBar::scrollAreaSize() const

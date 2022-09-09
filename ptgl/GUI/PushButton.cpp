@@ -26,27 +26,31 @@ PushButton::~PushButton()
 
 }
 
-void PushButton::setColor(const std::array<double, 4>& color)
+PushButton& PushButton::setColor(const std::array<double, 4>& color)
 {
     color_ = color;
+    return *this;
 }
 
-void PushButton::setColor(double r, double g, double b, double a)
+PushButton& PushButton::setColor(double r, double g, double b, double a)
 {
     color_ = {{r,g,b,a}};
+    return *this;
 }
 
-void PushButton::setCheckedColor(const std::array<double, 4>& color)
+PushButton& PushButton::setCheckedColor(const std::array<double, 4>& color)
 {
     checkedColor_ = color;
+    return *this;
 }
 
-void PushButton::setCheckedColor(double r, double g, double b, double a)
+PushButton& PushButton::setCheckedColor(double r, double g, double b, double a)
 {
     checkedColor_ = {{r,g,b,a}};
+    return *this;
 }
 
-void PushButton::setText(const std::string& text)
+AbstractButton& PushButton::setText(const std::string& text)
 {
     AbstractButton::setText(text);
 
@@ -54,6 +58,7 @@ void PushButton::setText(const std::string& text)
     int nw = this->height() * text_.size()*0.6;
     nw = std::max(nw, this->width());
     this->setWidth(nw);
+    return *this;
 }
 
 void PushButton::render2DScene(ptgl::Renderer2D* r)

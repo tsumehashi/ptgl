@@ -19,22 +19,23 @@ AbstractSlider::~AbstractSlider()
 
 }
 
-void AbstractSlider::setText(const std::string& text)
+AbstractSlider& AbstractSlider::setText(const std::string& text)
 {
     text_ = text;
+    return *this;
 }
 
-void AbstractSlider::setMaximum(int max)
+AbstractSlider& AbstractSlider::setMaximum(int max)
 {
-    setRange(minimum(), max);
+    return setRange(minimum(), max);
 }
 
-void AbstractSlider::setMinimum(int min)
+AbstractSlider& AbstractSlider::setMinimum(int min)
 {
-    setRange(min, maximum());
+    return setRange(min, maximum());
 }
 
-void AbstractSlider::setRange(int min, int max)
+AbstractSlider& AbstractSlider::setRange(int min, int max)
 {
     maximum_ = max;
     minimum_ = min;
@@ -45,9 +46,10 @@ void AbstractSlider::setRange(int min, int max)
     if (value_ > maximum_) {
         setValue(maximum_);
     }
+    return *this;
 }
 
-void AbstractSlider::setValue(int value, bool callCallback)
+AbstractSlider& AbstractSlider::setValue(int value, bool callCallback)
 {
     int temp = value;
     if (temp < minimum_) temp = minimum_;
@@ -60,11 +62,13 @@ void AbstractSlider::setValue(int value, bool callCallback)
             onValueChangedFunc_(value);
         }
     }
+    return *this;
 }
 
-void AbstractSlider::setOnValueChangedFunction(std::function<void (int)> func)
+AbstractSlider& AbstractSlider::setOnValueChangedFunction(std::function<void (int)> func)
 {
     onValueChangedFunc_ = func;
+    return *this;
 }
 
 }

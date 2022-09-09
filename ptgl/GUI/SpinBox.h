@@ -17,14 +17,20 @@ public:
 
     virtual void setSize(int width, int height) override;
 
-    virtual void setRange(int min, int max) override;
-    virtual void setValue(int value, bool callCallback = true) override;
+    virtual AbstractSlider& setRange(int min, int max) override;
+    virtual AbstractSlider& setValue(int value, bool callCallback = true) override;
 
     // color
-    void setColor(const std::array<double, 4>& color) { color_ = color; }
+    SpinBox& setColor(const std::array<double, 4>& color) {
+        color_ = color;
+        return *this;
+    }
     const std::array<double, 4>& color() const { return color_; }
 
-    void setEnableEditText(bool enable) { textEdit_->setEnableEditText(enable); }
+    SpinBox& setEnableEditText(bool enable) {
+        textEdit_->setEnableEditText(enable);
+        return *this;
+    }
     bool enableEditText() const { return textEdit_->enableEditText(); }
 
 protected:

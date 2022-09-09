@@ -151,7 +151,9 @@ void renderSVG(ptgl::Renderer2D* r, const SVGShapeList& svgShapeList, bool setNv
 
     if (setNvgBeginEndFrame) {
         nvgEndFrame(vg);
-        r->shaderProgram()->bind();
+        if (r->shaderProgram()) {
+            r->shaderProgram()->bind();
+        }
     }
 }
 
@@ -174,7 +176,9 @@ void renderSVGShape(ptgl::Renderer2D* r, SVGShapePtr svgShape, bool setNvgBeginE
 
     if (setNvgBeginEndFrame) {
         nvgEndFrame(vg);
-        r->shaderProgram()->bind();
+        if (r->shaderProgram()) {
+            r->shaderProgram()->bind();
+        }
     }
 }
 
@@ -234,7 +238,9 @@ void renderSVGShapeSub(ptgl::Renderer2D* r, SVGShapePtr svgShape, bool setNvgBeg
 
     if (setNvgBeginEndFrame) {
         nvgEndFrame(vg);
-        r->shaderProgram()->bind();
+        if (r->shaderProgram()) {
+            r->shaderProgram()->bind();
+        }
     }
 }
 

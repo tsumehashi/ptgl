@@ -21,29 +21,44 @@ public:
     SpinSlider(const std::string& text);
     virtual ~SpinSlider();
 
-    virtual void setText(const std::string& text) override;
+    virtual AbstractSlider& setText(const std::string& text) override;
 
-    void setShowText(bool on);
-    void setShowTextLength(int length);
+    SpinSlider& setShowText(bool on);
+    SpinSlider& setShowTextLength(int length);
 
     virtual void setSize(int width, int height) override;
 
-    virtual void setRange(int min, int max) override;
-    virtual void setValue(int value, bool callCallback = true) override;
+    virtual AbstractSlider& setRange(int min, int max) override;
+    virtual AbstractSlider& setValue(int value, bool callCallback = true) override;
 
     // color
-    void setColor(const std::array<double, 4>& color) { color_ = color; }
+    SpinSlider& setColor(const std::array<double, 4>& color) {
+        color_ = color;
+        return *this;
+    }
     const std::array<double, 4>& color() const { return color_; }
 
-    void setEnableEditText(bool enable) { textEdit_->setEnableEditText(enable); }
+    SpinSlider& setEnableEditText(bool enable) {
+        textEdit_->setEnableEditText(enable);
+        return *this;
+    }
     bool enableEditText() const { return textEdit_->enableEditText(); }
 
     // double click
-    void setDoubleClickTime(double time) { doubleClickTime_ = time; }
+    SpinSlider& setDoubleClickTime(double time) {
+        doubleClickTime_ = time;
+        return *this;
+    }
     double doubleClickTime() const { return doubleClickTime_; }
 
-    void setOnFocusedFunction(std::function<void ()> func) { onFocusedFunc_ = func; }
-    void setOnDoubleClickedFunction(std::function<void ()> func) { onDoubleClickedFunc_ = func; }
+    SpinSlider& setOnFocusedFunction(std::function<void ()> func) {
+        onFocusedFunc_ = func;
+        return *this;
+    }
+    SpinSlider& setOnDoubleClickedFunction(std::function<void ()> func) {
+        onDoubleClickedFunc_ = func;
+        return *this;
+    }
 
 protected:
 

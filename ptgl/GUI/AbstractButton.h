@@ -20,9 +20,9 @@ public:
     bool isChecked() const { return checked_; }
     bool isDown() const { return down_; }
 
-    virtual void setCheckable(bool on);
-    virtual void setDown(bool down);
-    virtual void setText(const std::string& text);
+    virtual AbstractButton& setCheckable(bool on);
+    virtual AbstractButton& setDown(bool down);
+    virtual AbstractButton& setText(const std::string& text);
 
     const std::string& text() const { return text_; }
 
@@ -30,10 +30,10 @@ public:
     virtual void setChecked(bool checked);
     virtual void toggle();
 
-    void setOnClickedFunction(std::function<void (bool)> func);
-    void setOnPressedFunction(std::function<void ()> func);
-    void setOnReleasedFunction(std::function<void ()> func);
-    void setOnToggledFunction(std::function<void (bool)> func);
+    AbstractButton& setOnClickedFunction(std::function<void (bool)> func);
+    AbstractButton& setOnPressedFunction(std::function<void ()> func);
+    AbstractButton& setOnReleasedFunction(std::function<void ()> func);
+    AbstractButton& setOnToggledFunction(std::function<void (bool)> func);
 
 protected:
 

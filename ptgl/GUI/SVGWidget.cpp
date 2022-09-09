@@ -147,7 +147,9 @@ void SVGWidget::SVGWidgetSVGSubGraphics2DItem::render2DScene(ptgl::Renderer2D* r
     // end frame
     {
         nvgEndFrame(vg);
-        r->shaderProgram()->bind();
+        if (r->shaderProgram()) {
+            r->shaderProgram()->bind();
+        }
     }
 
     r->popMatrix();

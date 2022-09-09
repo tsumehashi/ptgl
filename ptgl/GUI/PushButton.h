@@ -18,15 +18,15 @@ public:
     PushButton(const std::string& text);
     virtual ~PushButton();
 
-    void setColor(const std::array<double, 4>& color);
-    void setColor(double r, double g, double b, double a = 1.0);
+    PushButton& setColor(const std::array<double, 4>& color);
+    PushButton& setColor(double r, double g, double b, double a = 1.0);
     const std::array<double, 4>& color() const { return color_; }
 
-    void setCheckedColor(const std::array<double, 4>& color);
-    void setCheckedColor(double r, double g, double b, double a = 1.0);
+    PushButton& setCheckedColor(const std::array<double, 4>& color);
+    PushButton& setCheckedColor(double r, double g, double b, double a = 1.0);
     const std::array<double, 4>& checkedColor() const { return checkedColor_; }
 
-    virtual void setText(const std::string& text) override;
+    virtual AbstractButton& setText(const std::string& text) override;
 
 protected:
     virtual void render2DScene(ptgl::Renderer2D* r) override;

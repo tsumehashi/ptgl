@@ -79,22 +79,25 @@ void SpinSlider::init()
     setSize(200, 20);
 }
 
-void SpinSlider::setText(const std::string& text)
+AbstractSlider& SpinSlider::setText(const std::string& text)
 {
     AbstractSlider::setText(text);
 
     // resize
     setSize(width(), height());
+    return *this;
 }
 
-void SpinSlider::setShowText(bool on)
+SpinSlider& SpinSlider::setShowText(bool on)
 {
     showText_ = on;
+    return *this;
 }
 
-void SpinSlider::setShowTextLength(int length)
+SpinSlider& SpinSlider::setShowTextLength(int length)
 {
     showTextLength_ = length;
+    return *this;
 }
 
 void SpinSlider::setSize(int width, int height)
@@ -123,18 +126,20 @@ void SpinSlider::setSize(int width, int height)
     spinDownButton_->setSize(spinBoxSize_, spinBoxSize_);
 }
 
-void SpinSlider::setRange(int min, int max)
+AbstractSlider& SpinSlider::setRange(int min, int max)
 {
     AbstractSlider::setRange(min, max);
     slider_->setRange(min, max);
     textEdit_->setToolTipText("Range[" + std::to_string(this->minimum()) + ", " + std::to_string(this->maximum()) + "]");
+    return *this;
 }
 
-void SpinSlider::setValue(int value, bool callCallback)
+AbstractSlider& SpinSlider::setValue(int value, bool callCallback)
 {
     AbstractSlider::setValue(value, callCallback);
     slider_->setValue(value);
     textEdit_->setText(std::to_string(slider_->value()), false);
+    return *this;
 }
 
 void SpinSlider::onSliderValueChanged(int value)
