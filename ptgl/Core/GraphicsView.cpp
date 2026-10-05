@@ -541,6 +541,8 @@ void GraphicsView::executeRenderScene(ptgl::Renderer3D *r)
     for (const auto &item : traversedItems_) {
         if (!item->isEnabled() || !item->isVisible())
             continue;
+        if (r->renderState() == Renderer3D::RenderEdgeState && item->opacity() <= 0)
+            continue;
         if (shadowPass && !item->castsShadow())
             continue;
         if (colorPass && item->opacity() < 1.0)

@@ -14,7 +14,7 @@
 int main()
 {
     ptgl::QuickPlasticGraphicsView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
-    view.setWindowTitle("PlasticDemo - Space: style, S: shadows, L: moving light");
+    view.setWindowTitle("PlasticDemo - Space: Plastic / CAD / Legacy");
     view.setWindowSize(1100, 720);
     view.setFrameRate(60);
     view.setBackgroundColor(0.15, 0.18, 0.23);
@@ -121,7 +121,12 @@ int main()
         if (e->keyAction() == ptgl::KeyEvent::KeyAction::KeyRelease) return;
         using Style = ptgl::PlasticGraphicsView::RenderStyle;
         if (e->key() == ptgl::Key::Key_Space && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
-            view.setRenderStyle(view.renderStyle() == Style::Plastic ? Style::Legacy : Style::Plastic);
+            view.setRenderStyle(view.renderStyle() == Style::Plastic ? Style::CAD
+                              : view.renderStyle() == Style::CAD ? Style::Legacy : Style::Plastic);
+        } else if (e->key() == ptgl::Key::Key_B && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            auto settings = view.edgeSettings();
+            settings.enabled = !settings.enabled;
+            view.setEdgeSettings(settings);
         } else if (e->key() == ptgl::Key::Key_S && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
             auto settings = view.shadowSettings();
             settings.enabled = !settings.enabled;
@@ -137,9 +142,15 @@ int main()
             settings.enabled = !settings.enabled;
             view.setAmbientOcclusionSettings(settings);
         } else if (e->key() == ptgl::Key::Key_LeftBracket || e->key() == ptgl::Key::Key_RightBracket) {
-            auto settings = view.shadowSettings();
-            settings.softness = std::clamp(settings.softness + (e->key() == ptgl::Key::Key_RightBracket ? 0.5 : -0.5), 0.0, 4.0);
-            view.setShadowSettings(settings);
+            if (view.renderStyle() == Style::CAD) {
+                auto settings = view.edgeSettings();
+                settings.width = std::clamp(settings.width + (e->key() == ptgl::Key::Key_RightBracket ? 0.25 : -0.25), 0.5, 4.0);
+                view.setEdgeSettings(settings);
+            } else {
+                auto settings = view.shadowSettings();
+                settings.softness = std::clamp(settings.softness + (e->key() == ptgl::Key::Key_RightBracket ? 0.5 : -0.5), 0.0, 4.0);
+                view.setShadowSettings(settings);
+            }
         } else if (e->key() == ptgl::Key::Key_Up || e->key() == ptgl::Key::Key_Down) {
             auto material = view.defaultMaterial();
             material.roughness = std::clamp(material.roughness + (e->key() == ptgl::Key::Key_Up ? 0.05 : -0.05), 0.12, 1.0);
@@ -151,13 +162,22 @@ int main()
     view.setRenderTextSceneFunction([&](ptgl::TextRenderer* r) {
         using Style = ptgl::PlasticGraphicsView::RenderStyle;
         bool plastic = view.renderStyle() == Style::Plastic && view.plasticRenderingAvailable();
+        bool cad = view.renderStyle() == Style::CAD && view.cadRenderingAvailable();
         r->setTextColor(1, 1, 1);
-        r->drawText(20, 30, std::string(plastic ? "Plastic" : "Legacy")
-            + " | roughness: " + std::to_string(view.defaultMaterial().roughness).substr(0, 4)
-            + " | shadows: " + (view.shadowsActive() ? "on" : "off")
-            + " | softness: " + std::to_string(view.shadowSettings().softness).substr(0, 3));
-        r->drawText(20, 55, "Space: switch style   Up/Down: roughness   Right drag: orbit   Wheel: zoom");
-        r->drawText(20, 80, "S: shadows   [ / ]: softness   L: moving light   E: environment reflections   A: ambient occlusion");
+        if (cad) {
+            r->drawText(20, 30, std::string("CAD | edges: ") + (view.edgesActive() ? "on" : "off")
+                + " | width: " + std::to_string(view.edgeSettings().width).substr(0, 4) + " px"
+                + " | shadows: " + (view.shadowsActive() ? "on" : "off"));
+        } else {
+            r->drawText(20, 30, std::string(plastic ? "Plastic" : "Legacy")
+                + " | roughness: " + std::to_string(view.defaultMaterial().roughness).substr(0, 4)
+                + " | shadows: " + (view.shadowsActive() ? "on" : "off")
+                + " | softness: " + std::to_string(view.shadowSettings().softness).substr(0, 3));
+        }
+        r->drawText(20, 55, cad ? "Space: Plastic / CAD / Legacy   Right drag: orbit   Wheel: zoom"
+            : "Space: Plastic / CAD / Legacy   Up/Down: roughness   Right drag: orbit   Wheel: zoom");
+        r->drawText(20, 80, cad ? "B: toggle edges   [ / ]: edge width   S: shadows   L: moving light"
+            : "S: shadows   [ / ]: softness   L: moving light   E: environment reflections   A: ambient occlusion");
         r->drawText(20, 105, "Left click: select   Drag arrows/planes: move   Drag rings: rotate   Click floor/background: deselect");
         r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none")));
     });

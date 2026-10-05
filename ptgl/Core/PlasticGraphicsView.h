@@ -20,7 +20,7 @@ struct PlasticLighting {
 
 class PlasticGraphicsView : public GraphicsView {
 public:
-    enum class RenderStyle { Legacy, Plastic };
+    enum class RenderStyle { Legacy, Plastic, CAD };
 
     explicit PlasticGraphicsView(GraphicsDriverPtr driver);
     ~PlasticGraphicsView() override;
@@ -72,6 +72,19 @@ public:
     AmbientOcclusionSettings ambientOcclusionSettings() const;
     bool ambientOcclusionActive() const;
 
+    // CAD uses muted surface shading and visible, screen-space edges. Width is
+    // measured in framebuffer pixels; angle controls sharp normal transitions.
+    struct EdgeSettings {
+        bool enabled = true;
+        std::array<double, 3> color{{0.08, 0.10, 0.13}};
+        double width = 1.0; // Framebuffer pixels, [0.5, 4]
+        double normalAngle = 35.0; // Degrees, [5, 120]
+    };
+    void setEdgeSettings(const EdgeSettings& settings);
+    EdgeSettings edgeSettings() const;
+    bool cadRenderingAvailable() const;
+    bool edgesActive() const;
+
     // False until the GL context has successfully compiled the plastic shader.
     // A compilation failure is logged and rendering falls back to Legacy.
     bool plasticRenderingAvailable() const;
@@ -79,6 +92,7 @@ public:
 protected:
     void executeRenderEvent() override;
     void executePrepareRenderScene(Renderer3D* r) override;
+    void executeRenderScenePostProcess(Renderer3D* r) override;
 
 private:
     mutable std::mutex settingsMutex_;
@@ -89,6 +103,7 @@ private:
     ShadowSettings effectiveShadows_;
     EnvironmentSettings environment_;
     AmbientOcclusionSettings occlusion_;
+    EdgeSettings edges_;
 };
 
 } // namespace ptgl

@@ -248,7 +248,7 @@ void PlasticShadowMap::bind(const ShaderProgramPtr& program, bool enabled)
 {
     GLint activeTexture;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
-    glActiveTexture(GL_TEXTURE7); // Reserved only for the plastic color pass.
+    glActiveTexture(GL_TEXTURE7); // Reserved for Plastic and CAD color passes.
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTexture_);
     if (samplerObjects_) {
         glGetIntegerv(GL_SAMPLER_BINDING, &savedSampler_);

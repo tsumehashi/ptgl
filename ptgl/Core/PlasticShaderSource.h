@@ -7,6 +7,8 @@ namespace ptgl {
 
 struct PlasticShaderSource {
     static const std::string VertexShaderSource;
+    // Shared by Plastic and CAD surfaces; caller defines PTGL_SHADOW_PRECISION.
+    static const std::string ShadowFragmentShaderSource;
     static const std::string FragmentShaderSource;
 };
 

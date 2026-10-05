@@ -142,15 +142,17 @@ cmake --build build --config Release
 ```
 
 Run `build/examples/PlasticDemo/PlasticDemo` (or the corresponding `.exe` in
-the configuration directory). Space toggles legacy/plastic shading, Up/Down
+the configuration directory). Space cycles Plastic / CAD / Legacy shading, Up/Down
 changes roughness, right-drag orbits the camera, and the wheel zooms.
 S toggles shadows, `[` / `]` adjusts their softness, and L animates the key light.
 E toggles environment reflections and A toggles ambient occlusion.
+In CAD mode, B toggles edges and `[` / `]` adjusts their width instead of shadow softness.
+S toggles shadows in both CAD and Plastic modes; L moves their shared key light.
 Left-click an object to attach a `TransformHandle`. Drag its arrows or planes to
 move the object, or its rings to rotate it. Clicking the floor or background
 clears the selection. Object transforms persist when switching shading styles,
-and shadows follow the transformed objects in Plastic mode.
-The selected object is shown at 50% opacity in both styles and returns to opaque
+and shadows follow the transformed objects in Plastic and CAD modes.
+The selected object is shown at 50% opacity in all three styles and returns to opaque
 when deselected. Selection transparency preserves its picking geometry and shadows.
 The demo uses the shared `GraphicsItem::setOpacity()` API. Its shadow volume
 automatically follows moved and rotated objects.
@@ -285,6 +287,47 @@ shaders must implement `objectOpacity` and the output convention in
 `TransparencyRenderer.cpp` to participate in the corresponding paths.
 The temporary targets resize with the view and are released before context
 destruction. Overlays, text and picking remain separate from composition.
+
+### CAD edge rendering (prototype)
+
+```cpp
+view.setRenderStyle(ptgl::PlasticGraphicsView::RenderStyle::CAD);
+auto edges = view.edgeSettings();
+edges.enabled = true;
+edges.color = {0.08, 0.10, 0.13};
+edges.width = 1.0;        // Default: 1 framebuffer pixel, [0.5, 4].
+edges.normalAngle = 35;  // Normal discontinuity threshold in degrees, [5, 120].
+view.setEdgeSettings(edges);
+```
+
+CAD uses bright ambient shading with silhouettes and sharp normal/depth
+transitions. Its key light follows `PlasticLighting::keyDirection`, with a soft
+camera-relative fill. Shadows affect the key light while leaving ambient and fill
+illumination intact, so shaded faces remain readable. CAD and Plastic share
+`ShadowSettings`, including enable, strength, softness and automatic bounds;
+shadows are enabled by default. It reuses the smooth primitive geometry and shared
+picking, transparency and TransformHandle paths. Plastic's environment and ambient
+occlusion settings are retained for switching back to Plastic.
+`cadRenderingAvailable()` reports surface shader availability; `edgesActive()`
+reports whether edge composition succeeded in the last frame. Unsupported edge
+targets/shaders fall back to shaded surfaces; a failed surface shader falls back
+to Legacy. Settings are validated and snapshotted at frame boundaries.
+
+This prototype captures packed depth and view normals in two extra scene passes
+(`RenderEdgeState`), then composites edges before overlays and text. Keep draw
+callbacks free of animation updates. The targets follow the viewport size and
+are released with the GL context. Lit surfaces with normals participate, including
+items with `castsShadow == false`. Zero-opacity items and unlit helpers are excluded.
+Partially transparent items contribute their nearest surface: their visible edges
+remain solid, while edges of geometry behind them are suppressed. This does not
+display dashed hidden lines or trace edges through multiple transparent layers.
+
+Edge detection uses the rendered mesh, not CAD topology. Smooth sphere/cylinder
+tessellation is not drawn as a wire grid; hard imported vertex normals can still
+produce facet edges. Coplanar part boundaries and tangent fillet boundaries need
+explicit face/edge metadata for exact CAD-style display. Small details and line
+width/antialiasing are limited by framebuffer resolution. Angle thresholds and
+surface shading do not reconstruct missing CAD boundaries.
 
 ## License
 Licensed under the MIT license. see LICENSE for details.

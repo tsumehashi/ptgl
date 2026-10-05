@@ -392,8 +392,6 @@ void GLFWGraphicsDriver::keyEvent(GLFWwindow* window, int key, int scancode, int
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
 
-    (void)scancode;
-
     const int modifyKey = modKeyMap(mods);
     const ptgl::Key ptglKey = GLFWGraphicsDriver::keymap(key, scancode);
 
@@ -477,24 +475,34 @@ void GLFWGraphicsDriver::handleEvents()
 
 Key GLFWGraphicsDriver::keymap(int key, int scancode)
 {
-    // todo
-    // jis key
-    switch (scancode) {
-    case 20: return Key::Key_Minus; break;
-    case 21: return Key::Key_Caret; break;
-    case 132: return Key::Key_BackSlash_VerticalBar; break;
-    case 34: return Key::Key_At; break;
-    case 35: return Key::Key_LeftBracket; break;
-    case 47: return Key::Key_Semicolon; break;
-    case 48: return Key::Key_Colon; break;
-    case 51: return Key::Key_RightBracket; break;
-    case 59: return Key::Key_Comma; break;
-    case 60: return Key::Key_Period; break;
-    case 61: return Key::Key_Slash; break;
-    case 97: return Key::Key_BackSlash; break;
-    default:
-        break;
+    // Native scancodes differ across platforms (48 is B on Windows). Do not
+    // override GLFW key tokens with a fixed X11/JIS scancode table. Resolve
+    // punctuation using the active layout so the keys labelled [ and ] also
+    // work on JIS keyboards, where their physical positions differ from US.
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 2)
+    if ((key >= GLFW_KEY_SPACE && key <= GLFW_KEY_WORLD_2) || key == GLFW_KEY_UNKNOWN) {
+        const char* name = glfwGetKeyName(key, scancode);
+        if (name && name[0] && name[1] == '\0') {
+            switch (name[0]) {
+            case '-': return Key::Key_Minus;
+            case '^': return Key::Key_Caret;
+            case '@': return Key::Key_At;
+            case '[': return Key::Key_LeftBracket;
+            case ']': return Key::Key_RightBracket;
+            case ';': return Key::Key_Semicolon;
+            case ':': return Key::Key_Colon;
+            case ',': return Key::Key_Comma;
+            case '.': return Key::Key_Period;
+            case '/': return Key::Key_Slash;
+            case '\\': return Key::Key_BackSlash;
+            case '=': return Key::Key_Equal;
+            default: break;
+            }
+        }
     }
+#else
+    (void)scancode;
+#endif
 
     switch (key) {
     case GLFW_KEY_SPACE: return Key::Key_Space; break;

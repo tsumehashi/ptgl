@@ -45,6 +45,42 @@ void main() {
 }
 )GLSL";
 
+const std::string PlasticShaderSource::ShadowFragmentShaderSource = R"GLSL(
+uniform vec3 keyDirection;
+uniform PTGL_SHADOW_PRECISION sampler2D shadowMap;
+uniform float shadowEnabled;
+uniform PTGL_SHADOW_PRECISION float shadowTexelSize;
+uniform PTGL_SHADOW_PRECISION float shadowBias;
+uniform float shadowSoftness;
+uniform float shadowStrength;
+varying PTGL_SHADOW_PRECISION vec4 vShadowPosition;
+
+float keyVisibility(vec3 n) {
+    if (shadowEnabled < 0.5) return 1.0;
+    PTGL_SHADOW_PRECISION vec3 p = vShadowPosition.xyz / vShadowPosition.w * 0.5 + 0.5;
+    if (p.x <= 0.0 || p.y <= 0.0 || p.z <= 0.0 || p.x >= 1.0 || p.y >= 1.0 || p.z >= 1.0) return 1.0;
+    PTGL_SHADOW_PRECISION float bias = shadowBias * (1.0 + 2.0 * (1.0 - max(dot(n, keyDirection), 0.0)));
+    float visibility = 0.0;
+    // Tent-weighted 5x5 PCF compares depths before filtering (never blur encoded depth).
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
+            PTGL_SHADOW_PRECISION vec2 uv = p.xy + vec2(float(x), float(y)) * shadowTexelSize * shadowSoftness * 0.5;
+            float weight = (3.0 - abs(float(x))) * (3.0 - abs(float(y)));
+            PTGL_SHADOW_PRECISION vec2 encoded = texture2D(shadowMap, uv).rg;
+            PTGL_SHADOW_PRECISION float depth = encoded.r + encoded.g / 255.0;
+            float lit = step(p.z - bias, depth);
+            float inside = step(0.0, uv.x) * step(0.0, uv.y) * step(uv.x, 1.0) * step(uv.y, 1.0);
+            lit = mix(1.0, lit, inside);
+            visibility += weight * lit;
+        }
+    }
+    // Fade the last few texels of a finite shadow volume, avoiding a hard seam.
+    PTGL_SHADOW_PRECISION vec2 edge = min(p.xy, vec2(1.0) - p.xy);
+    float fade = smoothstep(0.0, shadowTexelSize * (shadowSoftness + 1.0), min(edge.x, edge.y));
+    return mix(1.0, visibility / 81.0, shadowStrength * fade);
+}
+)GLSL";
+
 // GGX distribution, correlated Smith visibility and Schlick Fresnel.
 // Lighting is evaluated in linear RGB; the default framebuffer receives sRGB.
 const std::string PlasticShaderSource::FragmentShaderSource = std::string(R"GLSL(
@@ -58,14 +94,13 @@ precision mediump float;
 #else
 #define PTGL_SHADOW_PRECISION
 #endif
-)GLSL") + detail::transparencyShaderFunctions() + R"GLSL(
+)GLSL") + detail::transparencyShaderFunctions() + ShadowFragmentShaderSource + R"GLSL(
 uniform vec4 color;
 uniform float lightEffectRate;
 uniform float pointSize;
 uniform float materialRoughness;
 uniform float materialReflectance;
 uniform float orthographicCamera;
-uniform vec3 keyDirection;
 uniform vec3 keyColor;
 uniform vec3 fillDirection;
 uniform vec3 fillColor;
@@ -83,16 +118,9 @@ uniform vec2 projectionScale;
 uniform float occlusionRadius;
 uniform float occlusionStrength;
 uniform float occlusionBias;
-uniform PTGL_SHADOW_PRECISION sampler2D shadowMap;
-uniform float shadowEnabled;
-uniform PTGL_SHADOW_PRECISION float shadowTexelSize;
-uniform PTGL_SHADOW_PRECISION float shadowBias;
-uniform float shadowSoftness;
-uniform float shadowStrength;
 varying PTGL_SHADOW_PRECISION vec3 vPosition;
 varying vec3 vNormal;
 varying float vSkyWeight;
-varying PTGL_SHADOW_PRECISION vec4 vShadowPosition;
 const float PI = 3.14159265;
 
 vec3 toLinear(vec3 c) {
@@ -129,31 +157,6 @@ vec3 illuminate(vec3 n, vec3 v, vec3 l, vec3 base, vec3 radiance) {
     // within mediump range. Cap radiance before exposure/tone mapping as well.
     float specular = min(distribution * (visibility * nl) * fresnel, 1024.0);
     return min((diffuse * nl + vec3(specular)) * radiance, vec3(16384.0));
-}
-
-float keyVisibility(vec3 n) {
-    if (shadowEnabled < 0.5) return 1.0;
-    PTGL_SHADOW_PRECISION vec3 p = vShadowPosition.xyz / vShadowPosition.w * 0.5 + 0.5;
-    if (p.x <= 0.0 || p.y <= 0.0 || p.z <= 0.0 || p.x >= 1.0 || p.y >= 1.0 || p.z >= 1.0) return 1.0;
-    PTGL_SHADOW_PRECISION float bias = shadowBias * (1.0 + 2.0 * (1.0 - max(dot(n, keyDirection), 0.0)));
-    float visibility = 0.0;
-    // Tent-weighted 5x5 PCF compares depths before filtering (never blur encoded depth).
-    for (int y = -2; y <= 2; ++y) {
-        for (int x = -2; x <= 2; ++x) {
-            PTGL_SHADOW_PRECISION vec2 uv = p.xy + vec2(float(x), float(y)) * shadowTexelSize * shadowSoftness * 0.5;
-            float weight = (3.0 - abs(float(x))) * (3.0 - abs(float(y)));
-            PTGL_SHADOW_PRECISION vec2 encoded = texture2D(shadowMap, uv).rg;
-            PTGL_SHADOW_PRECISION float depth = encoded.r + encoded.g / 255.0;
-            float lit = step(p.z - bias, depth);
-            float inside = step(0.0, uv.x) * step(0.0, uv.y) * step(uv.x, 1.0) * step(uv.y, 1.0);
-            lit = mix(1.0, lit, inside);
-            visibility += weight * lit;
-        }
-    }
-    // Fade the last few texels of a finite shadow volume, avoiding a hard seam.
-    PTGL_SHADOW_PRECISION vec2 edge = min(p.xy, vec2(1.0) - p.xy);
-    float fade = smoothstep(0.0, shadowTexelSize * (shadowSoftness + 1.0), min(edge.x, edge.y));
-    return mix(1.0, visibility / 81.0, shadowStrength * fade);
 }
 
 // A procedural studio environment: hemispheric illumination and two broad

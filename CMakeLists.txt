@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(ptgl C CXX)
 
 option(BUILD_SHARED_LIBS "Build shared library" ON)
-option(PTGL_BUILD_PLASTIC_DEMO "Build the plastic/legacy rendering comparison" OFF)
+option(PTGL_BUILD_PLASTIC_DEMO "Build the plastic/CAD/legacy rendering comparison" OFF)
 set(EIGEN_DIR /usr/include/eigen3 CACHE STRING "The directory of the Eigen library")
 
 find_package(OpenGL REQUIRED)

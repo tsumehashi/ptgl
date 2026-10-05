@@ -32,6 +32,7 @@ public:
         RenderBoundsState,
         RenderTransparentState,
         RenderOcclusionState,
+        RenderEdgeState, // Nearest visible surfaces, including translucent items.
     };
 
     enum CoordinatePlane {

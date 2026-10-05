@@ -7,6 +7,7 @@
 #include "PlasticShaderSource.h"
 #include "PlasticShadowMap.h"
 #include "PlasticAmbientOcclusion.h"
+#include "CadEdgeRenderer.h"
 #include "ptgl/Util/MathUtil.h"
 
 namespace ptgl {
@@ -94,14 +95,25 @@ public:
     PlasticGraphicsView::ShadowSettings shadows;
     PlasticGraphicsView::EnvironmentSettings environment;
     PlasticGraphicsView::AmbientOcclusionSettings occlusion;
+    PlasticGraphicsView::EdgeSettings edges;
     std::atomic<bool> available{false};
     std::atomic<bool> shadowsActive{false};
     std::atomic<bool> occlusionActive{false};
+    std::atomic<bool> cadAvailable{false};
+    std::atomic<bool> edgesActive{false};
 
     void initializeConfiguration() override
     {
         Renderer3D::initializeConfiguration();
         legacyShader_ = shaderProgram();
+        cadRenderer_.initialize();
+        cadAvailable.store(bool(cadRenderer_.surfaceProgram()));
+        shadowMap_.initialize();
+        upload(sphere_, sphereMesh(-pi / 2.0, pi / 2.0, 32));
+        upload(upperSphere_, sphereMesh(0.0, pi / 2.0, 16));
+        upload(lowerSphere_, sphereMesh(-pi / 2.0, 0.0, 16));
+        upload(cylinder_, cylinderMesh(true));
+        upload(cylinderSide_, cylinderMesh(false));
         auto vertex = Shader::loadFromSource(Shader::VertexShader, PlasticShaderSource::VertexShaderSource);
         auto fragment = Shader::loadFromSource(Shader::FragmentShader, PlasticShaderSource::FragmentShaderSource);
         auto program = std::make_shared<ShaderProgram>();
@@ -110,13 +122,7 @@ public:
             return;
         }
         plasticShader_ = program;
-        shadowMap_.initialize();
         occlusionMap_.initialize();
-        upload(sphere_, sphereMesh(-pi / 2.0, pi / 2.0, 32));
-        upload(upperSphere_, sphereMesh(0.0, pi / 2.0, 16));
-        upload(lowerSphere_, sphereMesh(-pi / 2.0, 0.0, 16));
-        upload(cylinder_, cylinderMesh(true));
-        upload(cylinderSide_, cylinderMesh(false));
         available.store(true);
     }
 
@@ -124,6 +130,9 @@ public:
     {
         shadowMap_.release();
         occlusionMap_.release();
+        cadRenderer_.release();
+        cadAvailable.store(false);
+        edgesActive.store(false);
         occlusionActive.store(false);
         shadowsActive.store(false);
         available.store(false);
@@ -136,8 +145,9 @@ public:
     void renderShadows(const std::function<void()>& draw)
     {
         shadowsActive.store(false);
-        if (!available.load() || style != PlasticGraphicsView::RenderStyle::Plastic
-            || !shadows.enabled || shadows.strength == 0) return;
+        const bool supportedStyle = (style == PlasticGraphicsView::RenderStyle::Plastic && available.load())
+                                 || (style == PlasticGraphicsView::RenderStyle::CAD && cadAvailable.load());
+        if (!supportedStyle || !shadowMap_.program() || !shadows.enabled || shadows.strength == 0) return;
         if (shadows.autoFit) {
             beginBoundsCollection();
             try { draw(); } catch (...) { endBoundsCollection(); throw; }
@@ -203,6 +213,29 @@ public:
         drawMesh(sphere_, tf_.transformation() * transformation(pos, rotation) * Eigen::Scaling(radius));
     }
 
+    void renderEdges(const std::function<void()>& draw)
+    {
+        edgesActive.store(false);
+        if (style != PlasticGraphicsView::RenderStyle::CAD || !cadAvailable.load() ||
+            !edges.enabled || !cadRenderer_.captureProgram()) return;
+        auto previous = forceUseShaderProgram_;
+        edgePass_ = true;
+        setForceUseShaderProgram(cadRenderer_.captureProgram());
+        try {
+            edgesActive.store(cadRenderer_.render(camera()->projection(), edges, [&](bool depth) {
+                edgeDepth_ = depth;
+                draw();
+            }));
+        } catch (...) {
+            endRender(RenderEdgeState);
+            edgePass_ = false;
+            setForceUseShaderProgram(previous);
+            throw;
+        }
+        edgePass_ = false;
+        setForceUseShaderProgram(previous);
+    }
+
     void drawCylinder(const double pos[3], const double rotation[9], double length, double radius, bool cap) override
     {
         if (!smoothPrimitives_) return Renderer3D::drawCylinder(pos, rotation, length, radius, cap);
@@ -224,18 +257,29 @@ protected:
     {
         if (shadowPass_) state = RenderShadowState;
         if (occlusionPass_) state = RenderOcclusionState;
-        smoothPrimitives_ = plasticShader_ && style == PlasticGraphicsView::RenderStyle::Plastic
-            && (state == RenderSceneState || state == RenderPickingState || state == RenderShadowState || state == RenderTransparentState || state == RenderOcclusionState);
-        setDefaultShaderProgram(shadowPass_ ? shadowMap_.program() : occlusionPass_ ? occlusionMap_.program() : smoothPrimitives_ ? plasticShader_ : legacyShader_);
+        if (edgePass_) state = RenderEdgeState;
+        auto surface = style == PlasticGraphicsView::RenderStyle::CAD ? cadRenderer_.surfaceProgram()
+                     : style == PlasticGraphicsView::RenderStyle::Plastic ? plasticShader_ : nullptr;
+        smoothPrimitives_ = surface &&
+            (state == RenderSceneState || state == RenderPickingState || state == RenderShadowState ||
+             state == RenderTransparentState || state == RenderOcclusionState || state == RenderEdgeState);
+        setDefaultShaderProgram(shadowPass_ ? shadowMap_.program() : occlusionPass_ ? occlusionMap_.program()
+                                : edgePass_ ? cadRenderer_.captureProgram()
+                                : smoothPrimitives_ ? surface : legacyShader_);
         Renderer3D::beginRender(state);
         setMaterial(defaultMaterial);
+        if (edgePass_) {
+            shaderProgram()->setParameter("captureDepth", edgeDepth_ ? 1.0 : 0.0);
+            return;
+        }
         if (shadowPass_) {
             shaderProgram()->setParameter("viewMatrix", shadowMap_.view());
             shaderProgram()->setParameter("projectionMatrix", shadowMap_.projection());
             return;
         }
         // The forced picking/depth shaders must never receive color-processing uniforms.
-        if (shaderProgram() != plasticShader_) return;
+        const bool cadSurface = shaderProgram() == cadRenderer_.surfaceProgram();
+        if (shaderProgram() != plasticShader_ && !cadSurface) return;
         auto program = shaderProgram();
         Eigen::Matrix3d viewRotation = camera()->modelview().block<3, 3>(0, 0);
         auto setDirection = [&](const char* name, const std::array<double, 3>& direction) {
@@ -247,6 +291,10 @@ protected:
             program->setParameter(name, c[0], c[1], c[2]);
         };
         setDirection("keyDirection", lighting.keyDirection);
+        if (cadSurface) {
+            shadowMap_.bind(program, shadowsActive.load());
+            return;
+        }
         setDirection("fillDirection", lighting.fillDirection);
         setColor("keyColor", lighting.keyColor);
         setColor("fillColor", lighting.fillColor);
@@ -288,8 +336,11 @@ private:
     bool smoothPrimitives_ = false;
     bool shadowPass_ = false;
     bool occlusionPass_ = false;
+    bool edgePass_ = false;
+    bool edgeDepth_ = false;
     detail::PlasticShadowMap shadowMap_;
     detail::PlasticAmbientOcclusion occlusionMap_;
+    detail::CadEdgeRenderer cadRenderer_;
 };
 
 } // namespace
@@ -426,6 +477,34 @@ bool PlasticGraphicsView::ambientOcclusionActive() const
     return static_cast<PlasticRenderer3D *>(renderer3D_.get())->occlusionActive.load();
 }
 
+void PlasticGraphicsView::setEdgeSettings(const EdgeSettings& settings)
+{
+    if (!std::isfinite(settings.width) || settings.width < 0.5 || settings.width > 4.0 ||
+        !std::isfinite(settings.normalAngle) || settings.normalAngle < 5 || settings.normalAngle > 120 ||
+        !std::all_of(settings.color.begin(), settings.color.end(),
+                     [](double v) { return std::isfinite(v) && v >= 0 && v <= 1; })) {
+        throw std::invalid_argument("Invalid CAD edge width, angle or color");
+    }
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    edges_ = settings;
+}
+
+PlasticGraphicsView::EdgeSettings PlasticGraphicsView::edgeSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return edges_;
+}
+
+bool PlasticGraphicsView::cadRenderingAvailable() const
+{
+    return static_cast<PlasticRenderer3D*>(renderer3D_.get())->cadAvailable.load();
+}
+
+bool PlasticGraphicsView::edgesActive() const
+{
+    return static_cast<PlasticRenderer3D*>(renderer3D_.get())->edgesActive.load();
+}
+
 void PlasticGraphicsView::executeRenderEvent()
 {
     auto* renderer = static_cast<PlasticRenderer3D*>(renderer3D_.get());
@@ -437,6 +516,7 @@ void PlasticGraphicsView::executeRenderEvent()
         renderer->shadows = shadows_;
         renderer->environment = environment_;
         renderer->occlusion = occlusion_;
+        renderer->edges = edges_;
     }
     GraphicsView::executeRenderEvent();
 }
@@ -448,6 +528,12 @@ void PlasticGraphicsView::executePrepareRenderScene(Renderer3D* r)
     static_cast<PlasticRenderer3D*>(r)->renderOcclusion([&] { executeRenderScene(r); });
     std::lock_guard<std::mutex> lock(settingsMutex_);
     effectiveShadows_ = static_cast<PlasticRenderer3D*>(r)->shadows;
+}
+
+void PlasticGraphicsView::executeRenderScenePostProcess(Renderer3D* r)
+{
+    static_cast<PlasticRenderer3D*>(r)->renderEdges([&] { executeRenderScene(r); });
+    GraphicsView::executeRenderScenePostProcess(r);
 }
 
 } // namespace ptgl
