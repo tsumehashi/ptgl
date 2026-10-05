@@ -31,8 +31,14 @@ Renderer2D::Renderer2D(GraphicsView* view) : graphicsView_(view)
 
 Renderer2D::~Renderer2D()
 {
-    nvgDeleteGLES2(renderNvgContext_);
-    nvgDeleteGLES2(pickingNvgContext_);
+    finalizeConfiguration();
+}
+
+void Renderer2D::finalizeConfiguration()
+{
+    if (renderNvgContext_) nvgDeleteGLES2(renderNvgContext_);
+    if (pickingNvgContext_) nvgDeleteGLES2(pickingNvgContext_);
+    renderNvgContext_ = pickingNvgContext_ = nvgContext_ = nullptr;
 }
 
 void Renderer2D::initializeConfiguration()

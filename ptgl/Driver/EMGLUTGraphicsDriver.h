@@ -65,6 +65,7 @@ protected:
     int frameRate_;
 
     bool terminated_ = false;
+    bool finalized_ = false;
 
     static inline EMGLUTGraphicsDriver* instance_ = nullptr;
 };
@@ -166,6 +167,13 @@ void EMGLUTGraphicsDriver::glutResizeEvent(int width, int height)
 void EMGLUTGraphicsDriver::glutRenderEvent()
 {
     if (EMGLUTGraphicsDriver* driver = EMGLUTGraphicsDriver::instance_) {
+        if (driver->terminated_) {
+            if (!driver->finalized_) {
+                driver->executeGraphicsViewFinalizeEvent();
+                driver->finalized_ = true;
+            }
+            return;
+        }
         // execute prev process
         driver->executeGraphicsViewPrevProcessEvent();
 

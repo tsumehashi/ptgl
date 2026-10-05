@@ -28,6 +28,7 @@ public:
         RenderOverlayState,
         RenderPickingState,
         RenderPickingOverlayState,
+        RenderShadowState,
     };
 
     enum CoordinatePlane {
@@ -45,6 +46,7 @@ public:
     virtual ~Renderer3D();
 
     virtual void initializeConfiguration();
+    virtual void finalizeConfiguration(); // Requires the owning GL context.
 
     RenderState renderState() const { return renderState_; }
 #if 0
@@ -312,7 +314,7 @@ protected:
 
     void updateModelMatrixParameter(const Eigen::Affine3d& affine) {
         shaderProgram()->setParameter(unifModelMatrixLocation_, affine.matrix());
-        if (!isPickingRenderMode()) {
+        if (!isPickingRenderMode() && renderState_ != RenderShadowState) {
             shaderProgram()->setParameter(unifNormalMatrixLocation_, calcNormalMatrix(affine));
         }
     }

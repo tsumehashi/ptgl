@@ -259,6 +259,18 @@ void GraphicsView::executeResizeEvent(int width, int height)
     resizeEvent(width, height);
 }
 
+void GraphicsView::executeFinalizeEvent()
+{
+    // GL deletion after the driver destroys its context can stall a GPU driver.
+    // Keep the CPU-side renderers alive, but release their GL objects here.
+    renderer3D_->finalizeConfiguration();
+    renderer2D_->finalizeConfiguration();
+    textRenderer_->finalizeConfiguration();
+    pickingUpShaderProgram_.reset();
+    depthRenderShaderProgram_.reset();
+    initialized_ = false;
+}
+
 void GraphicsView::executeRenderEvent()
 {
     // update camera
@@ -282,6 +294,8 @@ void GraphicsView::executeRenderEvent()
     for (auto& item : traversedItems_) {
         item->executePrevProcess();
     }
+
+    executePrepareRenderScene(renderer3D_.get());
 
 #if 1
     // -------- render picking scene ------

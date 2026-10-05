@@ -287,6 +287,7 @@ void GLFWGraphicsDriver::execute()
             }
         }
 
+        executeGraphicsViewFinalizeEvent();
         glfwDestroyWindow(glfwWindow_);
         glfwWindow_ = nullptr;
         terminated_ = true;

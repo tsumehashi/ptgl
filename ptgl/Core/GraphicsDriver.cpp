@@ -28,6 +28,11 @@ void GraphicsDriver::executeGraphicsViewRenderEvent()
     if (view_) view_->executeGraphicsViewRenderEvent();
 }
 
+void GraphicsDriver::executeGraphicsViewFinalizeEvent()
+{
+    if (view_) view_->executeGraphicsViewFinalizeEvent();
+}
+
 void GraphicsDriver::executeGraphicsViewResizeEvent(int width, int height)
 {
     if (view_) view_->executeGraphicsViewResizeEvent(width, height);

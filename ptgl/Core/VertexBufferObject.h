@@ -39,6 +39,7 @@ class VertexBufferObject {
 public:
     VertexBufferObject();
     virtual ~VertexBufferObject();
+    void release(); // Explicit, idempotent deletion while the owning context is current.
 
     static bool loadVertices(GLuint& vbo, const Vertex* vertices, size_t size, GLenum usage = GL_STATIC_DRAW);
     static bool loadIndices(GLuint& vbo, const GLuint* indices, size_t size, GLenum usage = GL_STATIC_DRAW);

@@ -40,6 +40,7 @@ public:
     virtual ~Renderer2D();
 
     virtual void initializeConfiguration();
+    virtual void finalizeConfiguration(); // Requires the owning GL context.
 
     RenderState renderState() const { return renderState_; }
 

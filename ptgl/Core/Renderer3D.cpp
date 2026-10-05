@@ -22,7 +22,22 @@ Renderer3D::Renderer3D(GraphicsView* view) :
 
 Renderer3D::~Renderer3D()
 {
+    finalizeConfiguration();
+}
 
+void Renderer3D::finalizeConfiguration()
+{
+    shaderProgram_.reset();
+    defaultShaderProgram_.reset();
+    forceUseShaderProgram_.reset();
+    for (auto* vbo : {&generalVBO_, &vertexVBO_, &primitiveWorldGridVBO_, &primitiveBoxVBO_,
+                     &primitiveSphereVBO_, &primitiveCylinderVBO_, &primitiveCylinderSideVBO_,
+                     &primitiveUpperSphereVBO_, &primitiveLowerSphereVBO_, &primitiveConeVBO_,
+                     &primitiveCircleVBO_, &primitiveRectVBO_, &primitiveAxisVBO_}) {
+        vbo->release();
+    }
+    for (auto& entry : registeredVerticesVBOInfoMap_) entry.second.vbo.release();
+    registeredVerticesVBOInfoMap_.clear();
 }
 
 void Renderer3D::initializeConfiguration()

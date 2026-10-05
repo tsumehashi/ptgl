@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include "GraphicsDriver.h"
 #include "PlasticShaderSource.h"
+#include "PlasticShadowMap.h"
 #include "ptgl/Util/MathUtil.h"
 
 namespace ptgl {
@@ -89,7 +90,9 @@ public:
     PlasticGraphicsView::RenderStyle style = PlasticGraphicsView::RenderStyle::Plastic;
     Material defaultMaterial;
     PlasticLighting lighting;
+    PlasticGraphicsView::ShadowSettings shadows;
     std::atomic<bool> available{false};
+    std::atomic<bool> shadowsActive{false};
 
     void initializeConfiguration() override
     {
@@ -103,12 +106,49 @@ public:
             return;
         }
         plasticShader_ = program;
+        shadowMap_.initialize();
         upload(sphere_, sphereMesh(-pi / 2.0, pi / 2.0, 32));
         upload(upperSphere_, sphereMesh(0.0, pi / 2.0, 16));
         upload(lowerSphere_, sphereMesh(-pi / 2.0, 0.0, 16));
         upload(cylinder_, cylinderMesh(true));
         upload(cylinderSide_, cylinderMesh(false));
         available.store(true);
+    }
+
+    void finalizeConfiguration() override
+    {
+        shadowMap_.release();
+        shadowsActive.store(false);
+        available.store(false);
+        plasticShader_.reset();
+        legacyShader_.reset();
+        for (auto* vbo : {&sphere_, &upperSphere_, &lowerSphere_, &cylinder_, &cylinderSide_}) vbo->release();
+        Renderer3D::finalizeConfiguration();
+    }
+
+    void renderShadows(const std::function<void()>& draw)
+    {
+        shadowsActive.store(false);
+        if (!available.load() || style != PlasticGraphicsView::RenderStyle::Plastic
+            || !shadows.enabled || shadows.strength == 0 || !shadowMap_.prepare(shadows, lighting)) return;
+        auto previousForce = forceUseShaderProgram_;
+        Eigen::Matrix4d previousProjectionView = projectionViewMatrix();
+        shadowPass_ = true;
+        setForceUseShaderProgram(shadowMap_.program());
+        setProjectionViewMatrix(shadowMap_.projection() * shadowMap_.view());
+        try {
+            shadowMap_.render(draw);
+        } catch (...) {
+            endRender(RenderShadowState);
+            shadowPass_ = false;
+            setForceUseShaderProgram(previousForce);
+            setProjectionViewMatrix(previousProjectionView);
+            throw;
+        }
+        shadowPass_ = false;
+        setForceUseShaderProgram(previousForce);
+        setProjectionViewMatrix(previousProjectionView);
+        shadowsActive.store(true);
     }
 
     void drawSphere(const double pos[3], const double rotation[9], double radius) override
@@ -136,11 +176,17 @@ public:
 protected:
     void beginRender(RenderState state) override
     {
+        if (shadowPass_) state = RenderShadowState;
         smoothPrimitives_ = plasticShader_ && style == PlasticGraphicsView::RenderStyle::Plastic
-            && (state == RenderSceneState || state == RenderPickingState);
-        setDefaultShaderProgram(smoothPrimitives_ ? plasticShader_ : legacyShader_);
+            && (state == RenderSceneState || state == RenderPickingState || state == RenderShadowState);
+        setDefaultShaderProgram(shadowPass_ ? shadowMap_.program() : smoothPrimitives_ ? plasticShader_ : legacyShader_);
         Renderer3D::beginRender(state);
         setMaterial(defaultMaterial);
+        if (shadowPass_) {
+            shaderProgram()->setParameter("viewMatrix", shadowMap_.view());
+            shaderProgram()->setParameter("projectionMatrix", shadowMap_.projection());
+            return;
+        }
         // The forced picking/depth shaders must never receive color-processing uniforms.
         if (shaderProgram() != plasticShader_) return;
         auto program = shaderProgram();
@@ -161,6 +207,13 @@ protected:
         setColor("groundColor", lighting.groundColor);
         program->setParameter("exposure", lighting.exposure);
         program->setParameter("orthographicCamera", camera()->viewMode() == Camera::Ortho ? 1.0 : 0.0);
+        shadowMap_.bind(program, shadowsActive.load());
+    }
+
+    void endRender(RenderState state) override
+    {
+        shadowMap_.unbind();
+        Renderer3D::endRender(state);
     }
 
 private:
@@ -174,6 +227,8 @@ private:
     ShaderProgramPtr legacyShader_, plasticShader_;
     VertexBufferObject sphere_, upperSphere_, lowerSphere_, cylinder_, cylinderSide_;
     bool smoothPrimitives_ = false;
+    bool shadowPass_ = false;
+    detail::PlasticShadowMap shadowMap_;
 };
 
 } // namespace
@@ -234,6 +289,34 @@ PlasticLighting PlasticGraphicsView::plasticLighting() const
     return lighting_;
 }
 
+void PlasticGraphicsView::setShadowSettings(const ShadowSettings& settings)
+{
+    auto inRange = [](double value, double lo, double hi) {
+        return std::isfinite(value) && value >= lo && value <= hi;
+    };
+    if (settings.resolution < 256 || settings.resolution > 4096
+        || (settings.resolution & (settings.resolution - 1)) != 0
+        || !std::all_of(settings.center.begin(), settings.center.end(), [](double v) { return std::isfinite(v); })
+        || !inRange(settings.halfExtent, 0.01, 1000000.0)
+        || !inRange(settings.softness, 0.0, 4.0) || !inRange(settings.bias, 0.0, 0.01)
+        || !inRange(settings.normalBias, 0.0, settings.halfExtent) || !inRange(settings.strength, 0.0, 1.0)) {
+        throw std::invalid_argument("Invalid plastic shadow settings (resolution, bounds, softness, bias or strength)");
+    }
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    shadows_ = settings;
+}
+
+PlasticGraphicsView::ShadowSettings PlasticGraphicsView::shadowSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return shadows_;
+}
+
+bool PlasticGraphicsView::shadowsActive() const
+{
+    return static_cast<PlasticRenderer3D*>(renderer3D_.get())->shadowsActive.load();
+}
+
 bool PlasticGraphicsView::plasticRenderingAvailable() const
 {
     return static_cast<PlasticRenderer3D*>(renderer3D_.get())->available.load();
@@ -247,8 +330,15 @@ void PlasticGraphicsView::executeRenderEvent()
         renderer->style = renderStyle_;
         renderer->defaultMaterial = defaultMaterial_;
         renderer->lighting = lighting_;
+        renderer->shadows = shadows_;
     }
     GraphicsView::executeRenderEvent();
+}
+
+void PlasticGraphicsView::executePrepareRenderScene(Renderer3D* r)
+{
+    GraphicsView::executePrepareRenderScene(r);
+    static_cast<PlasticRenderer3D*>(r)->renderShadows([&] { executeRenderScene(r); });
 }
 
 } // namespace ptgl

@@ -10,6 +10,15 @@ VertexBufferObject::~VertexBufferObject() {
 
 }
 
+void VertexBufferObject::release()
+{
+    if (vertexVBO_) glDeleteBuffers(1, &vertexVBO_);
+    if (indexVBO_) glDeleteBuffers(1, &indexVBO_);
+    vertexVBO_ = indexVBO_ = 0;
+    numVertices_ = numIndices_ = 0;
+    vertexVBOBufferSize_ = indexVBOBufferSize_ = 0;
+}
+
 VBO::VBO()
 {
 

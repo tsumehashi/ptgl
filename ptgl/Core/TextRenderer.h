@@ -25,6 +25,7 @@ public:
     virtual ~TextRenderer();
 
     virtual void initializeConfiguration();
+    virtual void finalizeConfiguration(); // Requires the owning GL context.
 
 #if 0    // todo
     void loadFont(const std::string& path);

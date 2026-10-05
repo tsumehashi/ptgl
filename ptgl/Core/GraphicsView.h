@@ -156,8 +156,12 @@ protected:
 
     // event
     virtual void executeInitializeEvent();
+    // Called by the driver on the rendering thread before destroying its context.
+    virtual void executeFinalizeEvent();
     virtual void executeResizeEvent(int width, int height);
     virtual void executeRenderEvent();
+    // Camera and item updates are complete; optional offscreen passes run here.
+    virtual void executePrepareRenderScene(Renderer3D*) {}
 
     // execute prev/post process (render)
     virtual void executePrevProcess();
@@ -297,6 +301,7 @@ protected:
 protected:
     // for GraphicsDriver
     virtual void executeGraphicsViewInitializeEvent();
+    virtual void executeGraphicsViewFinalizeEvent() { executeFinalizeEvent(); }
     virtual void executeGraphicsViewResizeEvent(int width, int height);
     virtual void executeGraphicsViewRenderEvent();
 

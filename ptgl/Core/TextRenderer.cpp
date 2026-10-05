@@ -21,7 +21,13 @@ TextRenderer::TextRenderer(GraphicsView* view)
 
 TextRenderer::~TextRenderer()
 {
-    nvgDeleteGLES2(nvgContext_);
+    finalizeConfiguration();
+}
+
+void TextRenderer::finalizeConfiguration()
+{
+    if (nvgContext_) nvgDeleteGLES2(nvgContext_);
+    nvgContext_ = nullptr;
 }
 
 void TextRenderer::initializeConfiguration()

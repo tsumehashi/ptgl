@@ -38,6 +38,7 @@ protected:
     virtual int frameRate() const = 0;
 
     void executeGraphicsViewInitializeEvent();
+    void executeGraphicsViewFinalizeEvent();
     void executeGraphicsViewRenderEvent();
     void executeGraphicsViewResizeEvent(int width, int height);
 

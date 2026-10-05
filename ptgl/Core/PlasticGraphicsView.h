@@ -36,18 +36,36 @@ public:
     void setPlasticLighting(const PlasticLighting& lighting);
     PlasticLighting plasticLighting() const;
 
+    struct ShadowSettings {
+        bool enabled = true;
+        int resolution = 1024; // Power of two, [256, 4096], limited by the GPU.
+        std::array<double, 3> center{{0.0, 0.0, 0.0}};
+        double halfExtent = 10.0; // World-space half-width of the light's ortho volume.
+        double softness = 1.5;    // PCF radius in shadow texels, [0, 4].
+        double bias = 0.0002;     // Normalized shadow depth, [0, 0.01].
+        double normalBias = 0.015; // World-space receiver offset, [0, halfExtent].
+        double strength = 1.0;    // [0, 1]; affects the key light only.
+    };
+    // Thread safe; invalid settings throw std::invalid_argument.
+    void setShadowSettings(const ShadowSettings& settings);
+    ShadowSettings shadowSettings() const;
+    // Whether the last prepared frame used a valid shadow map.
+    bool shadowsActive() const;
+
     // False until the GL context has successfully compiled the plastic shader.
     // A compilation failure is logged and rendering falls back to Legacy.
     bool plasticRenderingAvailable() const;
 
 protected:
     void executeRenderEvent() override;
+    void executePrepareRenderScene(Renderer3D* r) override;
 
 private:
     mutable std::mutex settingsMutex_;
     RenderStyle renderStyle_ = RenderStyle::Plastic;
     Material defaultMaterial_;
     PlasticLighting lighting_;
+    ShadowSettings shadows_;
 };
 
 } // namespace ptgl
