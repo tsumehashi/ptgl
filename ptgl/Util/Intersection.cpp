@@ -110,17 +110,20 @@ bool calcIntersectionLineAndSphere(Eigen::Vector3d& intersection_p,
         )
 {
     Eigen::Vector3d d = line_p2 - line_p1;
+    if (d.squaredNorm() == 0.0) {
+        return false;
+    }
     d.normalize();
 
     Eigen::Vector3d ev(sphere_p - line_p1);
     double a = ev.dot(d);
     double e2 = ev.dot(ev);
 
-    double sq = sqrt(radius*radius - e2 + a*a);
-    if (sq < 0) {
+    double discriminant = radius*radius - e2 + a*a;
+    if (discriminant < 0) {
         return false;
     } else {
-        double t = a - sq;
+        double t = a - sqrt(discriminant);
         intersection_p = line_p1 + t * d;
         return true;
     }

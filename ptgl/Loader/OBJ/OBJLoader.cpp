@@ -42,11 +42,26 @@ VertexListPtr OBJLoader::loadVertex(const std::string& filepath)
         size_t index_offset = 0;
         for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
             size_t fv = shapes[s].mesh.num_face_vertices[f];
+            if (fv != 3) {
+                std::cerr << "error OBJLoader::loadVertex: expected a triangle" << std::endl;
+                return nullptr;
+            }
+            const size_t faceStart = vertexList->size();
+            bool missingNormals = false;
 
             // Loop over vertices in the face.
             for (size_t v = 0; v < fv; v++) {
                 // access to vertex
                 tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                if (idx.vertex_index < 0 ||
+                    static_cast<size_t>(idx.vertex_index) >= attrib.vertices.size() / 3 ||
+                    idx.normal_index < -1 ||
+                    (idx.normal_index >= 0 && static_cast<size_t>(idx.normal_index) >= attrib.normals.size() / 3) ||
+                    idx.texcoord_index < -1 ||
+                    (idx.texcoord_index >= 0 && static_cast<size_t>(idx.texcoord_index) >= attrib.texcoords.size() / 2)) {
+                    std::cerr << "error OBJLoader::loadVertex: invalid vertex attribute index" << std::endl;
+                    return nullptr;
+                }
                 float vx = attrib.vertices[3*idx.vertex_index+0];
                 float vy = attrib.vertices[3*idx.vertex_index+1];
                 float vz = attrib.vertices[3*idx.vertex_index+2];
@@ -57,32 +72,37 @@ VertexListPtr OBJLoader::loadVertex(const std::string& filepath)
                 float ty = 0;
 
                 // set normals
-                if (!attrib.normals.empty()) {
+                if (idx.normal_index >= 0) {
                     nx = attrib.normals[3*idx.normal_index+0];
                     ny = attrib.normals[3*idx.normal_index+1];
                     nz = attrib.normals[3*idx.normal_index+2];
+                } else {
+                    missingNormals = true;
                 }
 
                 // set texcorrds
-                if (!attrib.texcoords.empty()) {
+                if (idx.texcoord_index >= 0) {
                     tx = attrib.texcoords[2*idx.texcoord_index+0];
                     ty = attrib.texcoords[2*idx.texcoord_index+1];
                 }
                 vertexList->emplace_back(vx, vy, vz, nx, ny, nz, tx, ty);
             }
 
-            if (attrib.normals.empty()) {
+            if (missingNormals) {
                 // generate normals
-                auto& v0 = (*vertexList)[vertexList->size()-3];
-                auto& v1 = (*vertexList)[vertexList->size()-2];
-                auto& v2 = (*vertexList)[vertexList->size()-1];
+                auto& v0 = (*vertexList)[faceStart];
+                auto& v1 = (*vertexList)[faceStart+1];
+                auto& v2 = (*vertexList)[faceStart+2];
 
                 Eigen::Vector3d nv = calcPlaneNorm(Eigen::Vector3d(v0.x, v0.y, v0.z),
                                                    Eigen::Vector3d(v1.x, v1.y, v1.z),
                                                    Eigen::Vector3d(v2.x, v2.y, v2.z));
-                v0.nx = nv(0); v0.ny = nv(1); v0.nz = nv(2);
-                v1.nx = nv(0); v1.ny = nv(1); v1.nz = nv(2);
-                v2.nx = nv(0); v2.ny = nv(1); v2.nz = nv(2);
+                for (size_t v = 0; v < fv; ++v) {
+                    if (shapes[s].mesh.indices[index_offset + v].normal_index < 0) {
+                        auto& vertex = (*vertexList)[faceStart + v];
+                        vertex.nx = nv(0); vertex.ny = nv(1); vertex.nz = nv(2);
+                    }
+                }
             }
 
             index_offset += fv;

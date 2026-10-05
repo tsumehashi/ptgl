@@ -73,7 +73,7 @@ void TransformStack::pop()
 
 void TransformStack::identiry()
 {
-    stack_.top().Identity();
+    stack_.top().setIdentity();
 }
 
 void TransformStack::scale(double s)

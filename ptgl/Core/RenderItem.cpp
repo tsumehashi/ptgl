@@ -340,24 +340,24 @@ void Render3DItem::rotateRpy(double r, double p, double y)
 
 void Render3DItem::rotateX(double deg)
 {
-    rotateRpy(deg, 0, 0);
+    rotateRpy(ptgl::radian(deg), 0, 0);
 }
 
 void Render3DItem::rotateY(double deg)
 {
-    rotateRpy(0, deg, 0);
+    rotateRpy(0, ptgl::radian(deg), 0);
 }
 
 void Render3DItem::rotateZ(double deg)
 {
-    rotateRpy(0, 0, deg);
+    rotateRpy(0, 0, ptgl::radian(deg));
 }
 
 void Render3DItem::transform(const Eigen::Affine3d& t)
 {
-    TransformItem item;
-    setPos(item, t.translation().data(), t.linear().data());
-    setItem(data_, item);
+    Eigen::Vector3d p = t.translation();
+    Eigen::Matrix3d R = t.linear();
+    transform(p, R);
 }
 
 void Render3DItem::transform(const Eigen::Matrix4d& m)
@@ -605,10 +605,7 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     {
         RotateItem* item = (RotateItem*)ptr;
         const double* m = item->R;
-        Eigen::Matrix3d R;
-        R << m[0], m[1], m[2],
-             m[3], m[4], m[5],
-             m[6], m[7], m[8];
+        Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(m);
         r->rotate(R);
         break;
     }
@@ -623,10 +620,7 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
         TransformItem* item = (TransformItem*)ptr;
         const double* m = item->R;
         Eigen::Vector3d p(item->pos[0], item->pos[1], item->pos[2]);
-        Eigen::Matrix3d R;
-        R << m[0], m[1], m[2],
-             m[3], m[4], m[5],
-             m[6], m[7], m[8];
+        Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(m);
         r->transform(p, R);
         break;
     }

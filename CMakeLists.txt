@@ -1,13 +1,11 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.10)
 project(ptgl C CXX)
 
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 set(EIGEN_DIR /usr/include/eigen3 CACHE STRING "The directory of the Eigen library")
 
-add_definitions("-O2 -Wall -std=c++17")
-
-include_directories(${EIGEN_DIR})
-include_directories(${PROJECT_SOURCE_DIR})
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
 
 file(GLOB_RECURSE PTGL_LIB_INC RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/ptgl/*.h)
 file(GLOB_RECURSE PTGL_LIB_SRC ${PROJECT_SOURCE_DIR}/ptgl/*.cpp)
@@ -23,8 +21,21 @@ add_library(ptgl
     ${PTGL_THIRDPARTY_SRC}
 )
 
+target_compile_features(ptgl PUBLIC cxx_std_17)
+target_include_directories(ptgl PUBLIC ${EIGEN_DIR} ${PROJECT_SOURCE_DIR})
+target_link_libraries(ptgl PUBLIC OpenGL::GL GLEW::GLEW)
+
+if(MSVC)
+    target_compile_definitions(ptgl PUBLIC _USE_MATH_DEFINES NOMINMAX)
+    target_compile_definitions(ptgl PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(ptgl PRIVATE /W3 /utf-8)
+    set_target_properties(ptgl PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+else()
+    target_compile_options(ptgl PRIVATE -Wall)
+endif()
+
 # install
-install(TARGETS ptgl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+install(TARGETS ptgl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 
 foreach(file ${PTGL_LIB_INC})
     get_filename_component(dir ${file} DIRECTORY)

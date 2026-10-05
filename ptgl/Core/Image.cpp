@@ -149,7 +149,7 @@ ImagePtr ImageLoader::loadImageAs(std::istream& is, Image::PixelType pixelType)
     ImagePtr image = std::make_shared<Image>();
     image->width_ = width;
     image->height_ = height;
-    switch (comp) {
+    switch (req_comp != 0 ? req_comp : comp) {
     case 1:
         image->pixelType_ = Image::PixelType::Gray;
         image->pixelDataStrideSize_ = 1;

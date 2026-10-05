@@ -7,6 +7,7 @@ ptgl is a C++ graphics library for prototyping.
 ### Requirements
 * Ubuntu 18.04
 * C++17  
+* CMake 3.10 or later
 
 ### Install dependencies
 ~~~
@@ -21,6 +22,11 @@ cd build
 cmake ..  
 make  
 ~~~
+MSVC builds can specify `EIGEN_DIR`, `GLEW_INCLUDE_DIR`, and
+`GLEW_SHARED_LIBRARY_RELEASE` as CMake cache paths when dependencies are not found
+automatically. The directory containing `glew32.dll` must be on `PATH` when running
+applications using the library.
+
 ### Install
 ~~~
 make install

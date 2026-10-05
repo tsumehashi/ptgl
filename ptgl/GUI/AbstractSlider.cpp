@@ -59,7 +59,7 @@ AbstractSlider& AbstractSlider::setValue(int value, bool callCallback)
         value_ = temp;
 
         if (callCallback && onValueChangedFunc_) {
-            onValueChangedFunc_(value);
+            onValueChangedFunc_(value_);
         }
     }
     return *this;
