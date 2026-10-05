@@ -1,4 +1,5 @@
 #include "DefaultShaderSource.h"
+#include "TransparencyRenderer.h"
 
 namespace ptgl {
 
@@ -60,22 +61,17 @@ const std::string DefaultShaderSource::DefaultVertexShaderSource =
 "}\n";
 
 const std::string DefaultShaderSource::DefaultFragmentShaderSource =
-"precision mediump float;\n"
-"varying vec4 vColor;\n"
-"varying float vPointSize;\n"
-"void main() {\n"
-"    // point\n"
-"    // todo efficiency\n"
-"    if (vPointSize > 1.0) {\n"
-"        // http://marina.sys.wakayama-u.ac.jp/~tokoi/?date=20110324\n"
-"        vec3 n;\n"
-"        n.xy = gl_PointCoord * 2.0 - 1.0;\n"
-"        n.z = 1.0 - dot(n.xy, n.xy);\n"
-"        if (n.z < 0.0) discard;\n"
-"    }\n"
-"    vec4 finalColor = vColor;\n"
-"    gl_FragColor = finalColor;\n"
-"}\n";
+std::string("precision mediump float;\n") + detail::transparencyShaderFunctions() + R"GLSL(
+    varying vec4 vColor;
+    varying float vPointSize;
+    void main() {
+        if (vPointSize > 1.0) {
+            vec2 p = gl_PointCoord * 2.0 - 1.0;
+            if (dot(p,p) > 1.0) discard;
+        }
+        ptglOutput(vColor);
+    }
+)GLSL";
 
 // default picking up shader source
 const std::string DefaultShaderSource::PickingUpVertexShaderSource =

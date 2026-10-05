@@ -45,12 +45,32 @@ public:
         double bias = 0.0002;     // Normalized shadow depth, [0, 0.01].
         double normalBias = 0.015; // World-space receiver offset, [0, halfExtent].
         double strength = 1.0;    // [0, 1]; affects the key light only.
+        bool autoFit = false;    // Fit visible mesh geometry, including view callbacks.
+        double padding = 0.1;    // Fractional margin for autoFit, [0, 1].
     };
     // Thread safe; invalid settings throw std::invalid_argument.
     void setShadowSettings(const ShadowSettings& settings);
     ShadowSettings shadowSettings() const;
+    ShadowSettings effectiveShadowSettings() const;
     // Whether the last prepared frame used a valid shadow map.
     bool shadowsActive() const;
+
+    struct EnvironmentSettings {
+        bool enabled = true;
+        double strength = 0.7; // [0, 4], procedural studio environment.
+        double rotation = 0.0; // Degrees about world Z, [-360, 360].
+    };
+    void setEnvironmentSettings(const EnvironmentSettings& settings);
+    EnvironmentSettings environmentSettings() const;
+    struct AmbientOcclusionSettings {
+        bool enabled = true;
+        double radius = 0.5; // World-space radius, (0, 100].
+        double strength = 1.0; // [0, 4], ambient illumination only.
+        double bias = 0.02; // World-space surface offset, [0, radius].
+    };
+    void setAmbientOcclusionSettings(const AmbientOcclusionSettings& settings);
+    AmbientOcclusionSettings ambientOcclusionSettings() const;
+    bool ambientOcclusionActive() const;
 
     // False until the GL context has successfully compiled the plastic shader.
     // A compilation failure is logged and rendering falls back to Legacy.
@@ -66,6 +86,9 @@ private:
     Material defaultMaterial_;
     PlasticLighting lighting_;
     ShadowSettings shadows_;
+    ShadowSettings effectiveShadows_;
+    EnvironmentSettings environment_;
+    AmbientOcclusionSettings occlusion_;
 };
 
 } // namespace ptgl

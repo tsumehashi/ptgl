@@ -250,6 +250,7 @@ void Translate1DHandle::renderPickingOverlayScene(ptgl::Renderer3D* r)
         p = transform_->position() + (scale_ * (1.0 - coneLength_) * transform_->rotation() * axis_);
         R = transform_->rotation() * aixsR_;
     }
+    cp_ = p;
     r->drawCone(p.data(), R.data(), length, rasius);
 }
 
@@ -653,8 +654,7 @@ void Translate3DHandle::mouseMoveEvent(ptgl::GraphicsItemMouseEvent* e)
     Eigen::Vector3d up = graphicsWindow()->camera()->unProject2D(x, y, 1.0);    // far
     Eigen::Vector3d plane_up = ptgl::calcIntersectionLineAndPlane(up, camera_p, plane_p, plane_norm);
 
-//    transform_->setPosition(Eigen::Vector3d(plane_up - dhp_));
-    transform_->setPosition(Eigen::Vector3d(plane_up));
+    transform_->setPosition(Eigen::Vector3d(plane_up - dhp_));
 
     // emit
     if (positionChangedFunc_) {

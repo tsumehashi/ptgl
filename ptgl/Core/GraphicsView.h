@@ -18,6 +18,7 @@
 namespace ptgl {
 
 class GraphicsDriver;
+namespace detail { class TransparencyRenderer; }
 typedef std::unique_ptr<GraphicsDriver> GraphicsDriverPtr;
 
 class GraphicsView {
@@ -97,6 +98,7 @@ public:
     const WheelEvent& getWheelEvent() const { return *wheelEvent_; }
     const KeyEvent& getKeyEvent() const { return *keyEvent_; }
     const PickingEvent& getPickingEvent() const { return *pickingEvent_; }
+    bool orderIndependentTransparencyActive() const { return transparencyActive_.load(); }
 
 #if 0
     // image buffer
@@ -204,6 +206,10 @@ protected:
     GraphicsItemPtr pickingUpGraphicsItem(int x, int y);
     void calcPickedDepth();
     void handlePickingUpEvent();
+    void updateSceneState();
+    void executePickingPass();
+    void renderSceneItem(Renderer3D* r, const GraphicsItemPtr& item, double opacity = 1.0);
+    void executeTransparentScene(Renderer3D* r);
 
     // handle GraphicsItem event
     void executeGraphicsItemMousePressEvent(MouseEvent* e);
@@ -233,6 +239,8 @@ protected:
     std::unique_ptr<Renderer3D> renderer3D_;
     std::unique_ptr<Renderer2D> renderer2D_;
     std::unique_ptr<TextRenderer> textRenderer_;
+    std::unique_ptr<detail::TransparencyRenderer> transparencyRenderer_;
+    std::atomic<bool> transparencyActive_{false};
 
     // camera
     bool enableCameraManipulate_;

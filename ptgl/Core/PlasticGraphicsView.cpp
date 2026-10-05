@@ -6,6 +6,7 @@
 #include "GraphicsDriver.h"
 #include "PlasticShaderSource.h"
 #include "PlasticShadowMap.h"
+#include "PlasticAmbientOcclusion.h"
 #include "ptgl/Util/MathUtil.h"
 
 namespace ptgl {
@@ -91,8 +92,11 @@ public:
     Material defaultMaterial;
     PlasticLighting lighting;
     PlasticGraphicsView::ShadowSettings shadows;
+    PlasticGraphicsView::EnvironmentSettings environment;
+    PlasticGraphicsView::AmbientOcclusionSettings occlusion;
     std::atomic<bool> available{false};
     std::atomic<bool> shadowsActive{false};
+    std::atomic<bool> occlusionActive{false};
 
     void initializeConfiguration() override
     {
@@ -107,6 +111,7 @@ public:
         }
         plasticShader_ = program;
         shadowMap_.initialize();
+        occlusionMap_.initialize();
         upload(sphere_, sphereMesh(-pi / 2.0, pi / 2.0, 32));
         upload(upperSphere_, sphereMesh(0.0, pi / 2.0, 16));
         upload(lowerSphere_, sphereMesh(-pi / 2.0, 0.0, 16));
@@ -118,6 +123,8 @@ public:
     void finalizeConfiguration() override
     {
         shadowMap_.release();
+        occlusionMap_.release();
+        occlusionActive.store(false);
         shadowsActive.store(false);
         available.store(false);
         plasticShader_.reset();
@@ -130,7 +137,31 @@ public:
     {
         shadowsActive.store(false);
         if (!available.load() || style != PlasticGraphicsView::RenderStyle::Plastic
-            || !shadows.enabled || shadows.strength == 0 || !shadowMap_.prepare(shadows, lighting)) return;
+            || !shadows.enabled || shadows.strength == 0) return;
+        if (shadows.autoFit) {
+            beginBoundsCollection();
+            try { draw(); } catch (...) { endBoundsCollection(); throw; }
+            auto bounds = endBoundsCollection();
+            if (!bounds.isEmpty()) {
+                Eigen::Vector3d center = bounds.center();
+                double radius = bounds.sizes().stableNorm() * 0.5;
+                if (!center.allFinite() || !std::isfinite(radius) || radius > 1000000.0) return;
+                // Reserve room for receiver bias and center quantization even
+                // when the caller requests zero extra padding.
+                shadows.halfExtent = std::max(0.05, (radius + shadows.normalBias) * (1.0 + shadows.padding))
+                    / (1.0 - 2.0 / shadows.resolution);
+                // Quantize size and center to reduce shadow shimmer during dragging.
+                shadows.halfExtent = std::ceil(shadows.halfExtent * 16.0) / 16.0;
+                Eigen::Vector3d direction(lighting.keyDirection.data()); direction.normalize();
+                Eigen::Vector3d up = std::abs(direction.z()) < .95 ? Eigen::Vector3d::UnitZ() : Eigen::Vector3d::UnitY();
+                Eigen::Vector3d origin = Eigen::Vector3d::Zero();
+                Eigen::Matrix3d basis = ptgl::lookAt(direction, origin, up).block<3,3>(0,0);
+                double texel = 2.0 * shadows.halfExtent / shadows.resolution;
+                center = basis.transpose() * ((basis * center) / texel).array().round().matrix() * texel;
+                for (int i=0;i<3;++i) shadows.center[i]=center[i];
+            }
+        }
+        if (!shadowMap_.prepare(shadows, lighting)) return;
         auto previousForce = forceUseShaderProgram_;
         Eigen::Matrix4d previousProjectionView = projectionViewMatrix();
         shadowPass_ = true;
@@ -149,6 +180,21 @@ public:
         setForceUseShaderProgram(previousForce);
         setProjectionViewMatrix(previousProjectionView);
         shadowsActive.store(true);
+    }
+
+    void renderOcclusion(const std::function<void()>& draw)
+    {
+        occlusionActive.store(false);
+        if (!available.load() || style != PlasticGraphicsView::RenderStyle::Plastic || !occlusion.enabled || occlusion.strength == 0 || !occlusionMap_.program()) return;
+        auto previous = forceUseShaderProgram_;
+        occlusionPass_ = true;
+        setForceUseShaderProgram(occlusionMap_.program());
+        try {
+            occlusionActive.store(occlusionMap_.render(windowWidth(),windowHeight(),draw));
+        } catch (...) {
+            endRender(RenderOcclusionState); occlusionPass_=false; setForceUseShaderProgram(previous); throw;
+        }
+        occlusionPass_ = false;setForceUseShaderProgram(previous);
     }
 
     void drawSphere(const double pos[3], const double rotation[9], double radius) override
@@ -177,9 +223,10 @@ protected:
     void beginRender(RenderState state) override
     {
         if (shadowPass_) state = RenderShadowState;
+        if (occlusionPass_) state = RenderOcclusionState;
         smoothPrimitives_ = plasticShader_ && style == PlasticGraphicsView::RenderStyle::Plastic
-            && (state == RenderSceneState || state == RenderPickingState || state == RenderShadowState);
-        setDefaultShaderProgram(shadowPass_ ? shadowMap_.program() : smoothPrimitives_ ? plasticShader_ : legacyShader_);
+            && (state == RenderSceneState || state == RenderPickingState || state == RenderShadowState || state == RenderTransparentState || state == RenderOcclusionState);
+        setDefaultShaderProgram(shadowPass_ ? shadowMap_.program() : occlusionPass_ ? occlusionMap_.program() : smoothPrimitives_ ? plasticShader_ : legacyShader_);
         Renderer3D::beginRender(state);
         setMaterial(defaultMaterial);
         if (shadowPass_) {
@@ -207,12 +254,24 @@ protected:
         setColor("groundColor", lighting.groundColor);
         program->setParameter("exposure", lighting.exposure);
         program->setParameter("orthographicCamera", camera()->viewMode() == Camera::Ortho ? 1.0 : 0.0);
+        program->setParameter("viewToWorld", Eigen::Matrix3d(viewRotation.transpose()));
+        program->setParameter("environmentStrength", environment.enabled ? environment.strength : 0.0);
+        program->setParameter("environmentRotation", environment.rotation * pi / 180.0);
+        program->setParameter("inverseProjection", Eigen::Matrix4d(camera()->projection().inverse()));
+        program->setParameter("occlusionRadius", occlusion.radius);
+        program->setParameter("occlusionStrength", occlusion.strength);
+        program->setParameter("occlusionBias", occlusion.bias);
+        program->setParameter("projectionScale", camera()->projection()(0,0), camera()->projection()(1,1));
+        GLint viewport[4];glGetIntegerv(GL_VIEWPORT,viewport);
+        program->setParameter("occlusionViewport", double(viewport[0]),double(viewport[1]),double(viewport[2]),double(viewport[3]));
+        occlusionMap_.bind(program, occlusionActive.load());
         shadowMap_.bind(program, shadowsActive.load());
     }
 
     void endRender(RenderState state) override
     {
         shadowMap_.unbind();
+        occlusionMap_.unbind();
         Renderer3D::endRender(state);
     }
 
@@ -221,14 +280,16 @@ private:
     {
         shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
         updateModelMatrixParameter(transform);
-        drawVertexBufferObject(mesh, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+        submitMesh(mesh);
     }
 
     ShaderProgramPtr legacyShader_, plasticShader_;
     VertexBufferObject sphere_, upperSphere_, lowerSphere_, cylinder_, cylinderSide_;
     bool smoothPrimitives_ = false;
     bool shadowPass_ = false;
+    bool occlusionPass_ = false;
     detail::PlasticShadowMap shadowMap_;
+    detail::PlasticAmbientOcclusion occlusionMap_;
 };
 
 } // namespace
@@ -299,7 +360,8 @@ void PlasticGraphicsView::setShadowSettings(const ShadowSettings& settings)
         || !std::all_of(settings.center.begin(), settings.center.end(), [](double v) { return std::isfinite(v); })
         || !inRange(settings.halfExtent, 0.01, 1000000.0)
         || !inRange(settings.softness, 0.0, 4.0) || !inRange(settings.bias, 0.0, 0.01)
-        || !inRange(settings.normalBias, 0.0, settings.halfExtent) || !inRange(settings.strength, 0.0, 1.0)) {
+        || !inRange(settings.normalBias, 0.0, settings.halfExtent) || !inRange(settings.strength, 0.0, 1.0)
+        || !inRange(settings.padding, 0.0, 1.0)) {
         throw std::invalid_argument("Invalid plastic shadow settings (resolution, bounds, softness, bias or strength)");
     }
     std::lock_guard<std::mutex> lock(settingsMutex_);
@@ -312,6 +374,12 @@ PlasticGraphicsView::ShadowSettings PlasticGraphicsView::shadowSettings() const
     return shadows_;
 }
 
+PlasticGraphicsView::ShadowSettings PlasticGraphicsView::effectiveShadowSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return effectiveShadows_;
+}
+
 bool PlasticGraphicsView::shadowsActive() const
 {
     return static_cast<PlasticRenderer3D*>(renderer3D_.get())->shadowsActive.load();
@@ -320,6 +388,42 @@ bool PlasticGraphicsView::shadowsActive() const
 bool PlasticGraphicsView::plasticRenderingAvailable() const
 {
     return static_cast<PlasticRenderer3D*>(renderer3D_.get())->available.load();
+}
+
+void PlasticGraphicsView::setEnvironmentSettings(const EnvironmentSettings &settings)
+{
+    if (!std::isfinite(settings.strength) || settings.strength < 0 || settings.strength > 4 ||
+        !std::isfinite(settings.rotation) || std::abs(settings.rotation) > 360)
+        throw std::invalid_argument("Invalid environment strength/rotation");
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    environment_ = settings;
+}
+
+PlasticGraphicsView::EnvironmentSettings PlasticGraphicsView::environmentSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return environment_;
+}
+
+void PlasticGraphicsView::setAmbientOcclusionSettings(const AmbientOcclusionSettings &settings)
+{
+    if (!std::isfinite(settings.radius) || settings.radius <= 0 || settings.radius > 100 ||
+        !std::isfinite(settings.strength) || settings.strength < 0 || settings.strength > 4 ||
+        !std::isfinite(settings.bias) || settings.bias < 0 || settings.bias > settings.radius)
+        throw std::invalid_argument("Invalid ambient occlusion radius/strength/bias");
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    occlusion_ = settings;
+}
+
+PlasticGraphicsView::AmbientOcclusionSettings PlasticGraphicsView::ambientOcclusionSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return occlusion_;
+}
+
+bool PlasticGraphicsView::ambientOcclusionActive() const
+{
+    return static_cast<PlasticRenderer3D *>(renderer3D_.get())->occlusionActive.load();
 }
 
 void PlasticGraphicsView::executeRenderEvent()
@@ -331,6 +435,8 @@ void PlasticGraphicsView::executeRenderEvent()
         renderer->defaultMaterial = defaultMaterial_;
         renderer->lighting = lighting_;
         renderer->shadows = shadows_;
+        renderer->environment = environment_;
+        renderer->occlusion = occlusion_;
     }
     GraphicsView::executeRenderEvent();
 }
@@ -339,6 +445,9 @@ void PlasticGraphicsView::executePrepareRenderScene(Renderer3D* r)
 {
     GraphicsView::executePrepareRenderScene(r);
     static_cast<PlasticRenderer3D*>(r)->renderShadows([&] { executeRenderScene(r); });
+    static_cast<PlasticRenderer3D*>(r)->renderOcclusion([&] { executeRenderScene(r); });
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    effectiveShadows_ = static_cast<PlasticRenderer3D*>(r)->shadows;
 }
 
 } // namespace ptgl

@@ -25,6 +25,7 @@ int main()
     auto shadows = view.shadowSettings();
     shadows.center = {0, 0, 0.7};
     shadows.halfExtent = 6.0;
+    shadows.autoFit = true;
     shadows.softness = 2.5;
     view.setShadowSettings(shadows);
 
@@ -61,57 +62,37 @@ int main()
     struct DemoObject {
         ptgl::GraphicsItemPtr item;
         ptgl::TransformPtr transform;
-        std::function<void(ptgl::Renderer3D*, double)> render;
     };
     std::vector<DemoObject> objects;
     ptgl::GraphicsItemPtr selectedObject;
     constexpr double selectedOpacity = 0.5;
     auto addObject = [&](const std::string& name, const Eigen::Vector3d& position,
-                         std::function<void(ptgl::Renderer3D*, double)> draw) {
+                         std::function<void(ptgl::Renderer3D*)> draw) {
         auto transform = std::make_shared<ptgl::Transform>(position, Eigen::Matrix3d::Identity());
         auto item = std::make_shared<ptgl::QuickGraphicsItem>();
         item->setName(name);
         // The same transform is used for drawing, picking and casting shadows.
-        auto render = [transform, draw](ptgl::Renderer3D* r, double opacity) {
+        item->setRenderSceneFunction([transform, draw](ptgl::Renderer3D* r) {
             r->pushMatrix();
             r->transform(transform->position(), transform->rotation());
-            draw(r, opacity);
+            draw(r);
             r->popMatrix();
-        };
-        item->setRenderSceneFunction([&selectedObject, itemPtr = item.get(), render](ptgl::Renderer3D* r) {
-            // Defer the selected surface until all opaque objects are drawn.
-            // Picking and shadow passes still use its opaque geometry.
-            if (selectedObject.get() != itemPtr || r->renderState() != ptgl::Renderer3D::RenderSceneState) {
-                render(r, 1.0);
-            }
         });
-        objects.push_back({item, transform, render});
+        objects.push_back({item, transform});
         view.addGraphicsItem(item);
     };
-    addObject("Sphere", {0, -2.1, 0.8}, [](ptgl::Renderer3D* r, double opacity) {
-        r->setColor(0.86, 0.24, 0.13, opacity);
+    addObject("Sphere", {0, -2.1, 0.8}, [](ptgl::Renderer3D* r) {
+        r->setColor(0.86, 0.24, 0.13);
         r->drawSphere(r->p0(), r->R0(), 0.8);
     });
-    addObject("Rounded box", {0, 0, 0.75}, [&](ptgl::Renderer3D* r, double opacity) {
-        r->setColor(0.16, 0.52, 0.83, opacity);
+    addObject("Rounded box", {0, 0, 0.75}, [&](ptgl::Renderer3D* r) {
+        r->setColor(0.16, 0.52, 0.83);
         r->drawVertex(r->p0(), r->R0(), roundedBox.vertices, roundedBox.indices);
     });
-    addObject("Cylinder", {0, 2.1, 0.8}, [](ptgl::Renderer3D* r, double opacity) {
-        r->setColor(0.95, 0.64, 0.12, opacity);
+    addObject("Cylinder", {0, 2.1, 0.8}, [](ptgl::Renderer3D* r) {
+        r->setColor(0.95, 0.64, 0.12);
         r->drawCylinder(r->p0(), r->R0(), 1.6, 0.72);
     });
-
-    auto transparentItem = std::make_shared<ptgl::QuickGraphicsItem>();
-    transparentItem->setPickable(false);
-    transparentItem->setRenderSceneFunction([&](ptgl::Renderer3D* r) {
-        if (r->renderState() != ptgl::Renderer3D::RenderSceneState) return;
-        for (const auto& object : objects) {
-            if (object.item == selectedObject && object.item->isEnabled() && object.item->isVisible()) {
-                object.render(r, selectedOpacity);
-            }
-        }
-    });
-    view.addGraphicsItem(transparentItem);
 
     auto handle = std::make_shared<ptgl::handle::TransformHandle>();
     handle->setEnabled(false);
@@ -122,9 +103,11 @@ int main()
         for (auto item = picked.get(); item; item = item->parentItem()) {
             if (item == handle.get()) return;
         }
+        if (selectedObject) selectedObject->setOpacity(1.0);
         for (const auto& object : objects) {
             if (object.item == picked) {
                 selectedObject = object.item;
+                selectedObject->setOpacity(selectedOpacity);
                 handle->setTransform(object.transform);
                 handle->setEnabled(true);
                 return;
@@ -145,6 +128,14 @@ int main()
             view.setShadowSettings(settings);
         } else if (e->key() == ptgl::Key::Key_L && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
             movingLight = !movingLight;
+        } else if (e->key() == ptgl::Key::Key_E && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            auto settings = view.environmentSettings();
+            settings.enabled = !settings.enabled;
+            view.setEnvironmentSettings(settings);
+        } else if (e->key() == ptgl::Key::Key_A && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            auto settings = view.ambientOcclusionSettings();
+            settings.enabled = !settings.enabled;
+            view.setAmbientOcclusionSettings(settings);
         } else if (e->key() == ptgl::Key::Key_LeftBracket || e->key() == ptgl::Key::Key_RightBracket) {
             auto settings = view.shadowSettings();
             settings.softness = std::clamp(settings.softness + (e->key() == ptgl::Key::Key_RightBracket ? 0.5 : -0.5), 0.0, 4.0);
@@ -166,7 +157,7 @@ int main()
             + " | shadows: " + (view.shadowsActive() ? "on" : "off")
             + " | softness: " + std::to_string(view.shadowSettings().softness).substr(0, 3));
         r->drawText(20, 55, "Space: switch style   Up/Down: roughness   Right drag: orbit   Wheel: zoom");
-        r->drawText(20, 80, "S: shadows   [ / ]: shadow softness   L: moving light");
+        r->drawText(20, 80, "S: shadows   [ / ]: softness   L: moving light   E: environment reflections   A: ambient occlusion");
         r->drawText(20, 105, "Left click: select   Drag arrows/planes: move   Drag rings: rotate   Click floor/background: deselect");
         r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none")));
     });

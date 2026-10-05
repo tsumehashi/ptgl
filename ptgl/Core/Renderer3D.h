@@ -29,6 +29,9 @@ public:
         RenderPickingState,
         RenderPickingOverlayState,
         RenderShadowState,
+        RenderBoundsState,
+        RenderTransparentState,
+        RenderOcclusionState,
     };
 
     enum CoordinatePlane {
@@ -69,6 +72,10 @@ public:
     ShaderProgramPtr shaderProgram() { return shaderProgram_; }
 
     void setForceUseShaderProgram(ShaderProgramPtr shaderProgram);
+    bool hasForcedShaderProgram() const { return bool(forceUseShaderProgram_); }
+    // Geometry-only bounds collection: callbacks must not advance animation.
+    void beginBoundsCollection() { sceneBounds_.setEmpty(); collectingBounds_ = true; }
+    Eigen::AlignedBox3d endBoundsCollection() { collectingBounds_ = false; return sceneBounds_; }
 
     // Light
     void setEffectLight(double e);
@@ -313,6 +320,7 @@ protected:
     }
 
     void updateModelMatrixParameter(const Eigen::Affine3d& affine) {
+        modelTransform_ = affine;
         shaderProgram()->setParameter(unifModelMatrixLocation_, affine.matrix());
         if (!isPickingRenderMode() && renderState_ != RenderShadowState) {
             shaderProgram()->setParameter(unifNormalMatrixLocation_, calcNormalMatrix(affine));
@@ -320,6 +328,10 @@ protected:
     }
 
     GraphicsView* graphicsView_ = nullptr;
+    void submitMesh(const VertexBufferObject& vbo, GLenum mode = GL_TRIANGLES);
+    bool collectingBounds_ = false;
+    Eigen::AlignedBox3d sceneBounds_;
+    Eigen::Affine3d modelTransform_ = Eigen::Affine3d::Identity();
 
     RenderState renderState_ = RenderNoneState;
 

@@ -3,6 +3,7 @@
 
 #include "GLPath.h"
 #include "Vertex.h"
+#include <Eigen/Geometry>
 
 namespace ptgl {
 
@@ -63,8 +64,11 @@ public:
 
     GLuint numVertices() const { return numVertices_; }
     GLuint numIndices() const { return numIndices_; }
+    const Eigen::AlignedBox3d& bounds() const { return bounds_; }
 
 private:
+    void updateBounds(const Vertex* vertices, size_t size);
+    Eigen::AlignedBox3d bounds_;
     GLuint vertexVBO_ = 0;
     GLuint indexVBO_ = 0;
     GLenum vertexUsage_ = GL_STATIC_DRAW;

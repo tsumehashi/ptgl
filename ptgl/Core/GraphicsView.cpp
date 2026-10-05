@@ -5,6 +5,8 @@
 #include "StandardCamera.h"
 #include "GraphicsDriver.h"
 #include "DefaultShaderSource.h"
+#include "TransparencyRenderer.h"
+#include <algorithm>
 
 //#define PTGL_DBG_PICKING
 //#define PTGL_DBG_CHECK_PICKING_COLOR
@@ -20,6 +22,7 @@ GraphicsView::GraphicsView(std::unique_ptr<GraphicsDriver> driver)
     renderer3D_ = std::make_unique<Renderer3D>(this);
     renderer2D_ = std::make_unique<Renderer2D>(this);
     textRenderer_ = std::make_unique<TextRenderer>(this);
+    transparencyRenderer_ = std::make_unique<detail::TransparencyRenderer>();
 
     // event
     mouseEvent_ = std::make_unique<MouseEvent>(this);
@@ -225,6 +228,7 @@ void GraphicsView::executeInitializeEvent()
 
     // load Shader
     loadDefaultShader();
+    transparencyRenderer_->initialize();
 
     ///----------------
     glClearColor(backgroundColor_[0], backgroundColor_[1], backgroundColor_[2], backgroundColor_[3]);
@@ -263,6 +267,8 @@ void GraphicsView::executeFinalizeEvent()
 {
     // GL deletion after the driver destroys its context can stall a GPU driver.
     // Keep the CPU-side renderers alive, but release their GL objects here.
+    transparencyRenderer_->release();
+    transparencyActive_.store(false);
     renderer3D_->finalizeConfiguration();
     renderer2D_->finalizeConfiguration();
     textRenderer_->finalizeConfiguration();
@@ -271,7 +277,7 @@ void GraphicsView::executeFinalizeEvent()
     initialized_ = false;
 }
 
-void GraphicsView::executeRenderEvent()
+void GraphicsView::updateSceneState()
 {
     // update camera
     camera()->updateViewport();
@@ -290,6 +296,12 @@ void GraphicsView::executeRenderEvent()
         });
     }
 
+}
+
+void GraphicsView::executeRenderEvent()
+{
+    updateSceneState();
+
     // execute GraphicsItem prev process
     for (auto& item : traversedItems_) {
         item->executePrevProcess();
@@ -297,99 +309,7 @@ void GraphicsView::executeRenderEvent()
 
     executePrepareRenderScene(renderer3D_.get());
 
-#if 1
-    // -------- render picking scene ------
-#ifdef PTGL_DBG_PICKING
-    glClearColor(0.8, 0.8, 0.8, 1.0);    // set background == 0
-#else    // PTGL_DBG_PICKING
-    glClearColor(0.0, 0.0, 0.0, 1.0);    // set background == 0
-#endif    // PTGL_DBG_PICKING
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    glDisable(GL_BLEND);
-
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc( GL_LEQUAL );
-
-    glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
-
-    if (!pickingUpShaderProgram_->valid()) {
-        std::cout << "picking shader invalid" << std::endl;
-    }
-
-    // init pick id
-    pickIdToItemList_.clear();
-    pickIdToItemList_.push_back(nullptr);    // id=0 is background
-
-    // set picking up shader
-    renderer3D_->setForceUseShaderProgram(pickingUpShaderProgram_);
-    // renderOverlayScene
-    executeRenderPickingOverlayScene(renderer3D_.get());
-    // restore shader
-    renderer3D_->setForceUseShaderProgram(nullptr);
-
-    // render2DScene
-    // set picking up shader
-    renderer2D_->setForceUseShaderProgram(pickingUpShaderProgram_);
-    // render2DScene
-    executeRenderPicking2DScene(renderer2D_.get());
-    // restore shader
-    renderer2D_->setForceUseShaderProgram(nullptr);
-
-    // handle picking
-    pickedGraphicsItem_ = pickingUpGraphicsItem(mouseX_, height() - mouseY_);
-
-    // renderScene
-    if (!pickedGraphicsItem_) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        // set picking up shader
-        renderer3D_->setForceUseShaderProgram(pickingUpShaderProgram_);
-        // renderScene
-        executeRenderPickingScene(renderer3D_.get());
-        // restore shader
-        renderer3D_->setForceUseShaderProgram(nullptr);
-
-        // handle picking
-        pickedGraphicsItem_ = pickingUpGraphicsItem(mouseX_, height() - mouseY_);
-    }
-#endif
-
-#ifdef PTGL_DBG_PICKING
-#else    // PTGL_DBG_PICKING
-    // ------- render depth scene --------
-    glClearColor(1, 1, 1, 1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    glDisable(GL_BLEND);
-
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc( GL_LEQUAL );
-
-    glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
-
-    renderer3D_->setForceUseShaderProgram(depthRenderShaderProgram_);
-    depthRenderShaderProgram_->bind();
-    depthRenderShaderProgram_->setParameter("perspectiveZnear", perspectiveZnear());
-    depthRenderShaderProgram_->setParameter("perspectiveZfar", perspectiveZfar());
-
-    // renderScene
-    executeRenderScene(renderer3D_.get());
-
-    // renderOverlayScene
-    executeRenderOverlayScene(renderer3D_.get());
-
-    renderer3D_->setForceUseShaderProgram(nullptr);
-
-    // render2DScene
-    executeRender2DScene(renderer2D_.get());
-
-    // picking
-    calcPickedDepth();
-    handlePickingUpEvent();
-
-#endif    // PTGL_DBG_PICKING
+    executePickingPass();
 
 #ifdef PTGL_DBG_PICKING
 #else    // PTGL_DBG_PICKING
@@ -446,6 +366,112 @@ void GraphicsView::executeRenderEvent()
 
 }
 
+void GraphicsView::executePickingPass()
+{
+    if (width() <= 0 || height() <= 0 || mouseX_ < 0 || mouseX_ >= width() || mouseY_ < 0 || mouseY_ >= height()) {
+        pickedGraphicsItem_.reset();
+        pickingEvent_->setPickingEvent(false, mouseX_, mouseY_, Eigen::Vector3d::Zero(),
+            Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), nullptr);
+        return;
+    }
+    glDepthMask(GL_TRUE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#if 1
+    // -------- render picking scene ------
+#ifdef PTGL_DBG_PICKING
+    glClearColor(0.8, 0.8, 0.8, 1.0);    // set background == 0
+#else    // PTGL_DBG_PICKING
+    glClearColor(0.0, 0.0, 0.0, 1.0);    // set background == 0
+#endif    // PTGL_DBG_PICKING
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glDisable(GL_BLEND);
+
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc( GL_LEQUAL );
+
+    glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
+
+    if (!pickingUpShaderProgram_->valid()) {
+        std::cout << "picking shader invalid" << std::endl;
+    }
+
+    // init pick id
+    pickIdToItemList_.clear();
+    pickIdToItemList_.push_back(nullptr);    // id=0 is background
+
+    // set picking up shader
+    renderer3D_->setForceUseShaderProgram(pickingUpShaderProgram_);
+    // renderOverlayScene
+    executeRenderPickingOverlayScene(renderer3D_.get());
+    // restore shader
+    renderer3D_->setForceUseShaderProgram(nullptr);
+
+    // render2DScene
+    // set picking up shader
+    renderer2D_->setForceUseShaderProgram(pickingUpShaderProgram_);
+    // render2DScene
+    executeRenderPicking2DScene(renderer2D_.get());
+    // restore shader
+    renderer2D_->setForceUseShaderProgram(nullptr);
+
+    // handle picking
+    pickedGraphicsItem_ = pickingUpGraphicsItem(mouseX_, std::min(height() - mouseY_, height() - 1));
+
+    // renderScene
+    if (!pickedGraphicsItem_) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        // set picking up shader
+        renderer3D_->setForceUseShaderProgram(pickingUpShaderProgram_);
+        // renderScene
+        executeRenderPickingScene(renderer3D_.get());
+        // restore shader
+        renderer3D_->setForceUseShaderProgram(nullptr);
+
+        // handle picking
+        pickedGraphicsItem_ = pickingUpGraphicsItem(mouseX_, std::min(height() - mouseY_, height() - 1));
+    }
+#endif
+
+#ifdef PTGL_DBG_PICKING
+#else    // PTGL_DBG_PICKING
+    // ------- render depth scene --------
+    glClearColor(1, 1, 1, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    glDisable(GL_BLEND);
+
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc( GL_LEQUAL );
+
+    glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
+
+    renderer3D_->setForceUseShaderProgram(depthRenderShaderProgram_);
+    depthRenderShaderProgram_->bind();
+    depthRenderShaderProgram_->setParameter("perspectiveZnear", perspectiveZnear());
+    depthRenderShaderProgram_->setParameter("perspectiveZfar", perspectiveZfar());
+
+    // renderScene
+    executeRenderScene(renderer3D_.get());
+
+    // renderOverlayScene
+    executeRenderOverlayScene(renderer3D_.get());
+
+    renderer3D_->setForceUseShaderProgram(nullptr);
+
+    // render2DScene
+    executeRender2DScene(renderer2D_.get());
+
+    // picking
+    calcPickedDepth();
+    handlePickingUpEvent();
+
+#endif    // PTGL_DBG_PICKING
+
+}
+
 // execute prev/post process (render)
 void GraphicsView::executePrevProcess()
 {
@@ -491,21 +517,102 @@ void GraphicsView::executeRenderBackground2DScene(ptgl::Renderer2D* r)
     r->endRender(Renderer2D::RenderBackgroundSceneState);
 }
 
-void GraphicsView::executeRenderScene(ptgl::Renderer3D* r)
+void GraphicsView::renderSceneItem(Renderer3D *r, const GraphicsItemPtr &item, double opacity)
+{
+    GLboolean cull = glIsEnabled(GL_CULL_FACE);
+    if (item->isDoubleSided())
+        glDisable(GL_CULL_FACE);
+    r->shaderProgram()->setParameter("objectOpacity", opacity);
+    item->renderScene(r);
+    r->shaderProgram()->setParameter("objectOpacity", 1.0);
+    if (cull)
+        glEnable(GL_CULL_FACE);
+    else
+        glDisable(GL_CULL_FACE);
+}
+
+void GraphicsView::executeRenderScene(ptgl::Renderer3D *r)
 {
     r->beginRender(Renderer3D::RenderSceneState);
-
-    // render GraphicsView
+    bool colorPass = !r->hasForcedShaderProgram() && r->renderState() == Renderer3D::RenderSceneState;
+    bool shadowPass = r->renderState() == Renderer3D::RenderShadowState ||
+                      r->renderState() == Renderer3D::RenderOcclusionState;
     renderScene(r);
-
-    // render GraphicsItem
-    for (auto item : traversedItems_) {
-        if (item->isEnabled() && item->isVisible()) {
-            item->renderScene(r);
-        }
+    for (const auto &item : traversedItems_) {
+        if (!item->isEnabled() || !item->isVisible())
+            continue;
+        if (shadowPass && !item->castsShadow())
+            continue;
+        if (colorPass && item->opacity() < 1.0)
+            continue;
+        renderSceneItem(r, item);
     }
-
     r->endRender(Renderer3D::RenderSceneState);
+    if (colorPass)
+        executeTransparentScene(r);
+}
+
+void GraphicsView::executeTransparentScene(Renderer3D *r)
+{
+    transparencyActive_.store(false);
+    GraphicsItemList transparent;
+    for (const auto &item : traversedItems_) {
+        if (item->isEnabled() && item->isVisible() && item->opacity() > 0 && item->opacity() < 1)
+            transparent.push_back(item);
+    }
+    if (transparent.empty())
+        return;
+    auto draw = [&](int pass) {
+        r->beginRender(Renderer3D::RenderTransparentState);
+        r->shaderProgram()->setParameter("transparencyPass", double(pass));
+        for (const auto &item : transparent)
+            renderSceneItem(r, item, item->opacity());
+        r->shaderProgram()->setParameter("transparencyPass", 0.0);
+        r->endRender(Renderer3D::RenderTransparentState);
+    };
+    // Custom shaders opt in by implementing the shared transparency uniforms.
+    bool shaderSupportsOIT = r->shaderProgram()->uniform("transparencyPass") >= 0;
+    auto opaqueDepth = [&] {
+        r->setForceUseShaderProgram(depthRenderShaderProgram_);
+        r->beginRender(Renderer3D::RenderSceneState);
+        renderScene(r);
+        for (const auto &item : traversedItems_) {
+            if (item->isEnabled() && item->isVisible() && item->opacity() >= 1.0)
+                renderSceneItem(r, item);
+        }
+        r->endRender(Renderer3D::RenderSceneState);
+        r->setForceUseShaderProgram(nullptr);
+    };
+    if (shaderSupportsOIT && transparencyRenderer_->render(width(), height(), opaqueDepth, draw)) {
+        transparencyActive_.store(true);
+        return;
+    }
+    // GLES 2/custom-shader fallback: order whole items by their geometry bounds.
+    std::vector<std::pair<double, GraphicsItemPtr>> sorted;
+    for (const auto &item : transparent) {
+        r->beginBoundsCollection();
+        r->beginRender(Renderer3D::RenderSceneState);
+        renderSceneItem(r, item);
+        r->endRender(Renderer3D::RenderSceneState);
+        auto bounds = r->endBoundsCollection();
+        double depth =
+            bounds.isEmpty()
+                ? 0.0
+                : -(camera()->modelview() *
+                    Eigen::Vector4d(bounds.center().x(), bounds.center().y(), bounds.center().z(), 1))
+                       .z();
+        sorted.emplace_back(depth, item);
+    }
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [](const auto &a, const auto &b) { return a.first > b.first; });
+    transparent.clear();
+    for (const auto &entry : sorted)
+        transparent.push_back(entry.second);
+    GLboolean mask;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &mask);
+    glDepthMask(GL_FALSE);
+    draw(0);
+    glDepthMask(mask);
 }
 
 void GraphicsView::executeRenderOverlayScene(ptgl::Renderer3D* r)
@@ -573,7 +680,10 @@ void GraphicsView::executeRenderPickingScene(ptgl::Renderer3D* r)
             uint32_t pickId = (uint32_t)pickIdToItemList_.size();
             auto pickColor = pickIdToColor(pickId);
             pickingUpShaderProgram_->setParameter("pickingUpColor", pickColor[0], pickColor[1], pickColor[2], pickColor[3]);
+            GLboolean cull = glIsEnabled(GL_CULL_FACE);
+            if (item->isDoubleSided()) glDisable(GL_CULL_FACE);
             item->renderPickingScene(r);
+            if (cull) glEnable(GL_CULL_FACE);
             pickIdToItemList_.push_back(item);
         }
     }
@@ -639,6 +749,13 @@ void GraphicsView::executeMousePressEvent(MouseEvent* e)
 
     mouseX_ = e->x();
     mouseY_ = e->y();
+
+    // Input can arrive between rendered frames. Refresh at the press position
+    // without advancing animations or emitting another frame.
+    if (initialized_ && e->button() == MouseEvent::MouseButton::LeftButton) {
+        updateSceneState();
+        executePickingPass();
+    }
 
     executeGraphicsItemMousePressEvent(e);
 
@@ -843,7 +960,7 @@ void GraphicsView::calcPickedDepth()
 {
     // read from depth render
     uint8_t rgba[4];
-    glReadPixels(mouseX_, height() - mouseY_, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glReadPixels(mouseX_, std::min(height() - mouseY_, height() - 1), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 
     auto rgbToValue = [](float r, float g, float b)    {
         double v = 255.0*255.0*b + 255.0*g + r;

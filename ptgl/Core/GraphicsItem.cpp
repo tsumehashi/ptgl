@@ -1,5 +1,7 @@
 #include "GraphicsItem.h"
 #include <algorithm>
+#include <cmath>
+#include <stdexcept>
 #include "GraphicsView.h"
 #include "Renderer3D.h"
 #include "Renderer2D.h"
@@ -66,6 +68,14 @@ void GraphicsItem::setPickable(bool enable)
     for (auto ptr : children_) {
         ptr->setPickable(enable);
     }
+}
+
+void GraphicsItem::setOpacity(double opacity)
+{
+    if (!std::isfinite(opacity) || opacity < 0 || opacity > 1) {
+        throw std::invalid_argument("GraphicsItem opacity must be in [0, 1]");
+    }
+    opacity_ = opacity;
 }
 
 void GraphicsItem::setEnabledWheelEvent(bool enable)

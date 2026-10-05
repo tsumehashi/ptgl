@@ -234,7 +234,7 @@ void Renderer3D::drawBox(const double pos[3], const double R[9], const double si
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-       drawVertexBufferObject(primitiveBoxVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+       submitMesh(primitiveBoxVBO_);
 }
 
 void Renderer3D::drawSphere(const double pos[3], const double R[9], double r)
@@ -243,7 +243,7 @@ void Renderer3D::drawSphere(const double pos[3], const double R[9], double r)
 
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
-    drawVertexBufferObject(primitiveSphereVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+    submitMesh(primitiveSphereVBO_);
 }
 
 void Renderer3D::drawCylinder(const double pos[3], const double R[9], double length, double radius, bool cap)
@@ -254,9 +254,9 @@ void Renderer3D::drawCylinder(const double pos[3], const double R[9], double len
     updateModelMatrixParameter(affine);
 
     if (cap) {
-        drawVertexBufferObject(primitiveCylinderVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+        submitMesh(primitiveCylinderVBO_);
     } else {
-        drawVertexBufferObject(primitiveCylinderSideVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+        submitMesh(primitiveCylinderSideVBO_);
     }
 }
 
@@ -273,7 +273,7 @@ void Renderer3D::drawCapsule(const double pos[3], const double R[9], double leng
 
         updateModelMatrixParameter(affine);
 
-        drawVertexBufferObject(vbo, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+        submitMesh(vbo);
     };
 
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
@@ -289,7 +289,7 @@ void Renderer3D::drawCone(const double pos[3], const double R[9], double length,
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-       drawVertexBufferObject(primitiveConeVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+       submitMesh(primitiveConeVBO_);
 }
 
 void Renderer3D::drawRing(const double pos[3], const double R[9], double length, double outer_radius, double inner_radius)
@@ -308,7 +308,7 @@ void Renderer3D::drawCircle(const double pos[3], const double R[9], double r)
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-       drawVertexBufferObject(primitiveCircleVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+       submitMesh(primitiveCircleVBO_);
 }
 
 void Renderer3D::drawRingCircle(const double pos[3], const double R[9], double outer_radius, double inner_radius)
@@ -324,7 +324,7 @@ void Renderer3D::drawRect(const double pos[3], const double R[9], double xw, dou
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-       drawVertexBufferObject(primitiveRectVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+       submitMesh(primitiveRectVBO_);
 }
 
 void Renderer3D::drawArrow(const double pos1[3], const double pos2[3], double r)
@@ -343,6 +343,7 @@ void Renderer3D::drawArrowCone(const double pos1[3], const double pos2[3], doubl
 
 void Renderer3D::drawAxis(const double pos[3], const double R[9], double length)
 {
+    if (collectingBounds_) return;
     Eigen::Affine3d affine = tf_.transformation() * ptgl::transformation(pos, R) * Eigen::Scaling(length);
 
     shaderProgram()->setParameter(unifModelMatrixLocation_, affine.matrix());
@@ -364,6 +365,7 @@ void Renderer3D::drawAxis(const double pos[3], const double R[9], double length)
 
 void Renderer3D::drawPoints(const double* p, int numpoints)
 {
+    if (collectingBounds_) return;
     generalVertexBuffer_.clear();
     for (int i = 0; i < numpoints; ++i) {
         generalVertexBuffer_.push_back({{(GLfloat)p[3*i], (GLfloat)p[3*i+1], (GLfloat)p[3*i+2]}});
@@ -384,6 +386,7 @@ void Renderer3D::drawPoints(const double* p, int numpoints)
 
 void Renderer3D::drawLines(const double* lines, int numlines, GLenum mode)
 {
+    if (collectingBounds_) return;
     generalVertexBuffer_.clear();
     for (int i = 0; i < numlines; ++i) {
         generalVertexBuffer_.push_back({{(GLfloat)lines[3*i], (GLfloat)lines[3*i+1], (GLfloat)lines[3*i+2]}});
@@ -444,6 +447,7 @@ void Renderer3D::addDrawPoints(double x, double y, double z)
 
 void Renderer3D::endDrawPoinhts()
 {
+    if (collectingBounds_) return;
     if (generalVertexBuffer_.empty()) {
         return;
     }
@@ -463,6 +467,7 @@ void Renderer3D::endDrawPoinhts()
 
 void Renderer3D::drawWorldGrid()
 {
+    if (collectingBounds_) return;
     shaderProgram()->setParameter(unifModelMatrixLocation_, Eigen::Matrix4d(Eigen::Matrix4d::Identity()));
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
 
@@ -475,6 +480,7 @@ void Renderer3D::drawWorldGrid()
 
 void Renderer3D::drawWorldAxis(double length)
 {
+    if (collectingBounds_) return;
     Eigen::Matrix4d s = Eigen::Matrix4d::Identity();
     s(0,0) = length; s(1,1) = length; s(2,2) = length;
     shaderProgram()->setParameter(unifModelMatrixLocation_, s);
@@ -491,6 +497,20 @@ void Renderer3D::drawWorldAxis(double length)
     drawVertexBufferObject(primitiveAxisVBO_.vertexVBO(), attrVertexLocation_, GL_LINES, 4, 2);
 
     shaderProgram()->setParameter(unifLightEffectRateLocation_, 1.0);    // enable light
+}
+
+void Renderer3D::submitMesh(const VertexBufferObject& vbo, GLenum mode)
+{
+    if (collectingBounds_) {
+        if (!vbo.bounds().isEmpty() && lightEffectRate_ > 0.0) {
+            for (int i = 0; i < 8; ++i) {
+                Eigen::Vector3d p = modelTransform_ * vbo.bounds().corner(static_cast<Eigen::AlignedBox3d::CornerType>(i));
+                if (p.allFinite()) sceneBounds_.extend(p);
+            }
+        }
+        return;
+    }
+    drawVertexBufferObject(vbo, attrVertexLocation_, attrNormalLocation_, mode);
 }
 
 void Renderer3D::drawVertexBufferObject(GLuint vbo, GLint attrVertex, GLenum mode, int offset, int n)
@@ -603,7 +623,7 @@ void Renderer3D::drawRegisteredVertices(const std::string& name)
         shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
         updateModelMatrixParameter(affine);
 
-           drawVertexBufferObject(vbo, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+           submitMesh(vbo);
     }
 }
 
@@ -616,7 +636,7 @@ void Renderer3D::drawVertex(const VertexList& vertices, const IndexList& indices
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-    drawVertexBufferObject(vertexVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+    submitMesh(vertexVBO_);
 }
 
 void Renderer3D::drawVertex(const double pos[3], const double R[9], const VertexList& vertices, const IndexList& indices)
@@ -628,7 +648,7 @@ void Renderer3D::drawVertex(const double pos[3], const double R[9], const Vertex
     shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
     updateModelMatrixParameter(affine);
 
-    drawVertexBufferObject(vertexVBO_, attrVertexLocation_, attrNormalLocation_, GL_TRIANGLES);
+    submitMesh(vertexVBO_);
 
 }
 
@@ -769,6 +789,7 @@ void Renderer3D::updateShaderParameterLocation()
 // for GraphicsView
 void Renderer3D::beginRender(RenderState state)
 {
+    if (collectingBounds_) state = RenderBoundsState;
     setRenderState(state);
 
     tf_.clear();
@@ -792,9 +813,12 @@ void Renderer3D::beginRender(RenderState state)
     shaderProgram()->setParameter("cameraPosition", camera()->position());
     shaderProgram()->setParameter("color", Eigen::Vector4d(1,1,1,1));
     shaderProgram()->setParameter("lightDirection", Eigen::Vector3d(1,1,1));
+    lightEffectRate_ = 1.0;
     shaderProgram()->setParameter("lightEffectRate", 1.0);
     shaderProgram()->setParameter("pointSize", 1.0);
     setMaterial(Material{});
+    shaderProgram()->setParameter("objectOpacity", 1.0);
+    shaderProgram()->setParameter("transparencyPass", 0.0);
 
     // todo
 

@@ -46,6 +46,14 @@ public:
     bool isPickable() const { return pickable_; }
     virtual void setPickable(bool enable);
 
+    // Scene opacity is independent of picking. Update on the view/event thread.
+    void setOpacity(double opacity); // [0, 1], throws for invalid values.
+    double opacity() const { return opacity_; }
+    void setCastsShadow(bool on) { castsShadow_ = on; }
+    bool castsShadow() const { return castsShadow_; }
+    void setDoubleSided(bool on) { doubleSided_ = on; }
+    bool isDoubleSided() const { return doubleSided_; }
+
     // enabledWheelEvent (default disabled)
     bool isEnabledWheelEvent() const { return enabledWheelEvent_; }
     virtual void setEnabledWheelEvent(bool enable);
@@ -146,6 +154,9 @@ private:
     bool visible_ = true;
     bool enabled_ = true;
     bool pickable_ = true;    // hover/picked/checked
+    double opacity_ = 1.0;
+    bool castsShadow_ = true;
+    bool doubleSided_ = false;
     bool enabledWheelEvent_ = false;
     bool enabledKeyEvent_ = false;
 

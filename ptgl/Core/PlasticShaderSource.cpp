@@ -1,4 +1,5 @@
 #include "PlasticShaderSource.h"
+#include "TransparencyRenderer.h"
 
 namespace ptgl {
 
@@ -24,7 +25,7 @@ uniform float shadowNormalBias;
 uniform PTGL_MEDIUMP float pointSize;
 attribute vec3 position;
 attribute vec3 normal;
-varying PTGL_MEDIUMP vec3 vPosition;
+varying PTGL_SHADOW_PRECISION vec3 vPosition;
 varying PTGL_MEDIUMP vec3 vNormal;
 varying PTGL_MEDIUMP float vSkyWeight;
 varying PTGL_SHADOW_PRECISION vec4 vShadowPosition;
@@ -46,7 +47,7 @@ void main() {
 
 // GGX distribution, correlated Smith visibility and Schlick Fresnel.
 // Lighting is evaluated in linear RGB; the default framebuffer receives sRGB.
-const std::string PlasticShaderSource::FragmentShaderSource = R"GLSL(
+const std::string PlasticShaderSource::FragmentShaderSource = std::string(R"GLSL(
 #ifdef GL_ES
 precision mediump float;
 #ifdef GL_FRAGMENT_PRECISION_HIGH
@@ -57,6 +58,7 @@ precision mediump float;
 #else
 #define PTGL_SHADOW_PRECISION
 #endif
+)GLSL") + detail::transparencyShaderFunctions() + R"GLSL(
 uniform vec4 color;
 uniform float lightEffectRate;
 uniform float pointSize;
@@ -70,13 +72,24 @@ uniform vec3 fillColor;
 uniform vec3 skyColor;
 uniform vec3 groundColor;
 uniform float exposure;
+uniform mat3 viewToWorld;
+uniform float environmentStrength;
+uniform float environmentRotation;
+uniform PTGL_SHADOW_PRECISION sampler2D occlusionDepth;
+uniform float occlusionEnabled;
+uniform PTGL_SHADOW_PRECISION mat4 inverseProjection;
+uniform PTGL_SHADOW_PRECISION vec4 occlusionViewport;
+uniform vec2 projectionScale;
+uniform float occlusionRadius;
+uniform float occlusionStrength;
+uniform float occlusionBias;
 uniform PTGL_SHADOW_PRECISION sampler2D shadowMap;
 uniform float shadowEnabled;
 uniform PTGL_SHADOW_PRECISION float shadowTexelSize;
 uniform PTGL_SHADOW_PRECISION float shadowBias;
 uniform float shadowSoftness;
 uniform float shadowStrength;
-varying vec3 vPosition;
+varying PTGL_SHADOW_PRECISION vec3 vPosition;
 varying vec3 vNormal;
 varying float vSkyWeight;
 varying PTGL_SHADOW_PRECISION vec4 vShadowPosition;
@@ -143,6 +156,50 @@ float keyVisibility(vec3 n) {
     return mix(1.0, visibility / 81.0, shadowStrength * fade);
 }
 
+// A procedural studio environment: hemispheric illumination and two broad
+// softboxes. Roughness broadens reflections without external image assets.
+vec3 environmentReflection(vec3 n, vec3 v) {
+    vec3 r = viewToWorld * reflect(-v,n);
+    float c=cos(environmentRotation), s=sin(environmentRotation);
+    r.xy=mat2(c,-s,s,c)*r.xy;
+    float rough=materialRoughness*materialRoughness;
+    vec3 env=mix(groundColor,skyColor,smoothstep(-0.3,0.7,r.z));
+    vec3 d=normalize(vec3(-1.0,-0.7,1.3));
+    vec3 side=normalize(cross(d,vec3(0.0,0.0,1.0)));
+    vec3 up=cross(side,d);
+    vec2 size=vec2(0.12,0.45)+rough*0.8;
+    vec2 q=vec2(dot(r,side),dot(r,up))/size;
+    float box=exp(-dot(q,q)*2.0)*smoothstep(0.1,0.8,dot(r,d));
+    float second=pow(max(dot(r,normalize(vec3(1.0,0.5,0.8))),0.0),mix(80.0,3.0,rough));
+    env+=vec3(5.0,5.2,5.6)*box*(0.12*0.45)/(size.x*size.y);
+    env+=vec3(1.5,1.3,1.0)*second/(1.0+rough*6.0);
+    float nv=max(dot(n,v),0.0);
+    float fresnel=materialReflectance+(1.0-materialReflectance)*pow(1.0-nv,5.0)*(1.0-materialRoughness);
+    return env*fresnel*environmentStrength/(1.0+rough);
+}
+
+float ambientVisibility(vec3 n) {
+    if(occlusionEnabled<0.5)return 1.0;
+    PTGL_SHADOW_PRECISION vec2 uv=(gl_FragCoord.xy-occlusionViewport.xy)/occlusionViewport.zw;
+    vec2 radius=0.5*projectionScale*occlusionRadius/mix(max(-vPosition.z,0.001),1.0,orthographicCamera);
+    float occluded=0.0;
+    for(int i=0;i<16;++i) {
+        float angle=float(i)*2.39996323;
+        vec2 offset=vec2(cos(angle),sin(angle))*sqrt((float(i)+0.5)/16.0);
+        PTGL_SHADOW_PRECISION vec2 sampleUV=uv+offset*radius;
+        if(sampleUV.x<=0.0||sampleUV.y<=0.0||sampleUV.x>=1.0||sampleUV.y>=1.0)continue;
+        PTGL_SHADOW_PRECISION vec3 encodedDepth=texture2D(occlusionDepth,sampleUV).rgb;
+        PTGL_SHADOW_PRECISION float depth=dot(encodedDepth,vec3(1.0,1.0/255.0,1.0/65025.0));
+        if(depth>=1.0)continue;
+        PTGL_SHADOW_PRECISION vec4 position=inverseProjection*vec4(sampleUV*2.0-1.0,depth*2.0-1.0,1.0);
+        PTGL_SHADOW_PRECISION vec3 delta=position.xyz/position.w-vPosition;
+        float distance=length(delta);
+        float falloff=1.0-smoothstep(occlusionRadius*0.25,occlusionRadius,distance);
+        occluded+=max(dot(n,delta)-occlusionBias,0.0)/max(distance,0.0001)*falloff;
+    }
+    return clamp(1.0-occlusionStrength*occluded/8.0,0.1,1.0);
+}
+
 void main() {
     if (pointSize > 1.0) {
         vec2 p = gl_PointCoord * 2.0 - 1.0;
@@ -150,22 +207,23 @@ void main() {
     }
     // Keep axes, lines, points and explicitly unlit colors unchanged.
     if (lightEffectRate <= 0.0 || dot(vNormal, vNormal) < 0.0001) {
-        gl_FragColor = color;
+        ptglOutput(color);
         return;
     }
     vec3 n = normalize(vNormal);
+    if(!gl_FrontFacing)n=-n;
     vec3 v = -vPosition / max(length(vPosition), 0.0001);
     v = mix(v, vec3(0.0, 0.0, 1.0), orthographicCamera);
     vec3 base = toLinear(clamp(color.rgb, 0.0, 1.0));
     vec3 ambient = mix(groundColor, skyColor, clamp(vSkyWeight, 0.0, 1.0));
-    vec3 lit = base * ambient * (1.0 - materialReflectance);
+    vec3 lit = (base * ambient * (1.0 - materialReflectance) + environmentReflection(n,v)) * ambientVisibility(n);
     lit += keyVisibility(n) * illuminate(n, v, keyDirection, base, keyColor);
     lit += illuminate(n, v, fillDirection, base, fillColor);
     // Equivalent to (lit * exposure)/(1 + lit * exposure), without overflow.
     vec3 mapped = lit / (vec3(1.0 / max(exposure, 0.0001)) + lit);
     if (exposure <= 0.0) mapped = vec3(0.0);
     vec3 displayColor = toSRGB(mapped);
-    gl_FragColor = vec4(mix(color.rgb, displayColor, clamp(lightEffectRate, 0.0, 1.0)), color.a);
+    ptglOutput(vec4(mix(color.rgb, displayColor, clamp(lightEffectRate, 0.0, 1.0)), color.a));
 }
 )GLSL";
 

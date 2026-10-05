@@ -17,6 +17,17 @@ void VertexBufferObject::release()
     vertexVBO_ = indexVBO_ = 0;
     numVertices_ = numIndices_ = 0;
     vertexVBOBufferSize_ = indexVBOBufferSize_ = 0;
+    bounds_.setEmpty();
+}
+
+void VertexBufferObject::updateBounds(const Vertex* vertices, size_t size)
+{
+    bounds_.setEmpty();
+    if (!vertices) return; // Allocation without initial vertex data.
+    for (size_t i = 0; i < size; ++i) {
+        Eigen::Vector3d p(vertices[i].x, vertices[i].y, vertices[i].z);
+        if (p.allFinite()) bounds_.extend(p);
+    }
 }
 
 VBO::VBO()
@@ -102,6 +113,7 @@ bool VertexBufferObject::loadIndices(GLuint& vbo, const GLuint* indices, size_t 
 
 bool VertexBufferObject::loadVertices(const Vertex* vertices, size_t size, GLenum usage)
 {
+    updateBounds(vertices, size);
     vertexUsage_ = usage;
     numVertices_ = size;
     vertexVBOBufferSize_ = sizeof(Vertex) * size;
@@ -136,6 +148,7 @@ bool VertexBufferObject::updateIndices(GLuint vbo, const GLuint* indices, size_t
 
 bool VertexBufferObject::updateVertices(const Vertex* vertices, size_t size)
 {
+    updateBounds(vertices, size);
     numVertices_ = size;
 
     // check size
