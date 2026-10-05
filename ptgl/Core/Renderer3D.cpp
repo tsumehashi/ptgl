@@ -1,5 +1,7 @@
 #include "Renderer3D.h"
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 #include "ptgl/Util/MathUtil.h"
 #include "GraphicsView.h"
 #include "Camera.h"
@@ -185,6 +187,18 @@ void Renderer3D::getColor(double& r, double& g, double& b, double& a)
 void Renderer3D::getTextColor(double& r, double& g, double& b)
 {
     r = textColor_[0], g = textColor_[1], b = textColor_[2];
+}
+
+void Renderer3D::setMaterial(const Material& material)
+{
+    material_.roughness = std::isfinite(material.roughness)
+        ? std::clamp(material.roughness, 0.12, 1.0) : 0.35;
+    material_.specularReflectance = std::isfinite(material.specularReflectance)
+        ? std::clamp(material.specularReflectance, 0.0, 1.0) : 0.04;
+    if (shaderProgram_ && shaderProgram_->binded()) {
+        shaderProgram_->setParameter(unifMaterialRoughnessLocation_, material_.roughness);
+        shaderProgram_->setParameter(unifMaterialReflectanceLocation_, material_.specularReflectance);
+    }
 }
 
 // draw functions
@@ -491,12 +505,12 @@ void Renderer3D::drawVertexBufferObject(const ptgl::VertexBufferObject& vbo, GLi
     glBindBuffer(GL_ARRAY_BUFFER, vbo.vertexVBO());
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo.indexVBO());
     glEnableVertexAttribArray(attrVertex);
-    glEnableVertexAttribArray(attrNormal);
+    if (attrNormal >= 0) glEnableVertexAttribArray(attrNormal);
     glVertexAttribPointer(attrVertex, 3, GL_FLOAT, GL_FALSE, sizeof(ptgl::Vertex), (const GLvoid*)0 );
-    glVertexAttribPointer(attrNormal, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)12);
+    if (attrNormal >= 0) glVertexAttribPointer(attrNormal, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)12);
     glDrawElements( mode, vbo.numIndices(), GL_UNSIGNED_INT, 0 );
     glDisableVertexAttribArray(attrVertex);
-    glDisableVertexAttribArray(attrNormal);
+    if (attrNormal >= 0) glDisableVertexAttribArray(attrNormal);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
@@ -733,6 +747,8 @@ void Renderer3D::updateShaderParameterLocation()
     unifLightEffectRateLocation_ = shaderProgram()->uniform("lightEffectRate");
     unifNormalMatrixLocation_ = shaderProgram()->uniform("normalMatrix");
     unifPointSizeLocation_ = shaderProgram()->uniform("pointSize");
+    unifMaterialRoughnessLocation_ = shaderProgram()->uniform("materialRoughness");
+    unifMaterialReflectanceLocation_ = shaderProgram()->uniform("materialReflectance");
 }
 
 // for GraphicsView
@@ -763,6 +779,7 @@ void Renderer3D::beginRender(RenderState state)
     shaderProgram()->setParameter("lightDirection", Eigen::Vector3d(1,1,1));
     shaderProgram()->setParameter("lightEffectRate", 1.0);
     shaderProgram()->setParameter("pointSize", 1.0);
+    setMaterial(Material{});
 
     // todo
 

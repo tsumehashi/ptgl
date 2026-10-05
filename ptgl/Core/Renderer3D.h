@@ -10,6 +10,7 @@
 #include "GLPath.h"
 #include "ShaderProgram.h"
 #include "VertexBufferObject.h"
+#include "Material.h"
 
 namespace ptgl {
 
@@ -84,6 +85,10 @@ public:
     void getColor(double& r, double& g, double& b, double& a);
     void getTextColor(double& r, double& g, double& b);
 
+    // Set from rendering callbacks, like setColor(). Reset at each render pass.
+    void setMaterial(const Material& material);
+    const Material& material() const { return material_; }
+
     // draw functions
     using vec3d = std::array<double, 3>;
     using vec9d = std::array<double, 9>;
@@ -130,15 +135,15 @@ public:
     template <typename T = vec3d, typename U = vec9d, typename V = vec3d>
     void drawBox(const T& pos, const U& R, const V& sides) { drawBox(getData(getVec<3>(pos)), getData(getVec<9>(R)), getData(getVec<3>(sides))); }
 
-    void drawSphere(const double pos[3], const double R[9], double r);
+    virtual void drawSphere(const double pos[3], const double R[9], double r);
     template <typename T = vec3d, typename U = vec9d>
     void drawSphere(const T& pos, const U& R, double r) { drawSphere(getData(getVec<3>(pos)), getData(getVec<9>(R)), r); }
 
-    void drawCylinder(const double pos[3], const double R[9], double length, double radius, bool cap = true);
+    virtual void drawCylinder(const double pos[3], const double R[9], double length, double radius, bool cap = true);
     template <typename T = vec3d, typename U = vec9d>
     void drawCylinder(const T& pos, const U& R, double length, double radius, bool cap = true) { drawCylinder(getData(getVec<3>(pos)), getData(getVec<9>(R)), length, radius, cap); }
 
-    void drawCapsule(const double pos[3], const double R[9], double length, double radius);
+    virtual void drawCapsule(const double pos[3], const double R[9], double length, double radius);
     template <typename T = vec3d, typename U = vec9d>
     void drawCapsule(const T& pos, const U& R, double length, double radius) { drawCapsule(getData(getVec<3>(pos)), getData(getVec<9>(R)), length, radius); }
 
@@ -318,6 +323,7 @@ protected:
 
     std::array<double, 4> color_{{1,1,1,1}};
     std::array<double, 3> textColor_{{1,1,1}};
+    Material material_;
 
     double pointSize_ = 1;
     double lineWidth_ = 1;
@@ -369,6 +375,8 @@ protected:
     GLint unifNormalMatrixLocation_ = -1;
     GLint unifLightEffectRateLocation_ = -1;
     GLint unifPointSizeLocation_ = -1;
+    GLint unifMaterialRoughnessLocation_ = -1;
+    GLint unifMaterialReflectanceLocation_ = -1;
 
 protected:
     // for GraphicsView

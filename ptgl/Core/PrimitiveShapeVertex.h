@@ -1,6 +1,7 @@
 #ifndef PTGL_CORE_PRIMITIVESHAPEVERTEX_H_
 #define PTGL_CORE_PRIMITIVESHAPEVERTEX_H_
 
+#include <array>
 #include "Vertex.h"
 
 namespace ptgl {
@@ -57,6 +58,10 @@ public:
 
     // RingCircle
     static VertexSet generateRingCircle(double outer_radius, double inner_radius, bool bothSide = true);
+
+    // Centered box with smooth rounded edges. Create once and reuse the mesh.
+    // Positive finite sides, radius in [0, min(sides)/2], segments in [1, 64].
+    static VertexSet generateRoundedBox(const std::array<double, 3>& sides, double radius, int segments = 6);
 
     static void setVertexBothSide(VertexSet& vertexSet);
 };

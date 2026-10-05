@@ -229,8 +229,12 @@ void GraphicsView::executeInitializeEvent()
     ///----------------
     glClearColor(backgroundColor_[0], backgroundColor_[1], backgroundColor_[2], backgroundColor_[3]);
 
-    glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
-    glEnable(GL_POINT_SPRITE);
+    // GLES always uses shader point sizes/sprites and rejects these desktop caps.
+    const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    if (glVersion && std::string(glVersion).compare(0, 9, "OpenGL ES") != 0) {
+        glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
+        glEnable(GL_POINT_SPRITE);
+    }
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA , GL_ONE_MINUS_SRC_ALPHA);
@@ -598,8 +602,6 @@ void GraphicsView::executeRenderPicking2DScene(ptgl::Renderer2D* r)
             pickIdToItemList_.push_back(item);
         }
     }
-
-    pickingUpShaderProgram_->setParameter("pickingUpColor", 0.0, 0.0, 0.0, 1.0);
 
     renderer2D_->endRender(Renderer2D::RenderPickingState);
     renderer2D_->setRenderState(Renderer2D::RenderNoneState);

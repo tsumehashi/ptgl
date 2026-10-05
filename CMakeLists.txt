@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(ptgl C CXX)
 
 option(BUILD_SHARED_LIBS "Build shared library" ON)
+option(PTGL_BUILD_PLASTIC_DEMO "Build the plastic/legacy rendering comparison" OFF)
 set(EIGEN_DIR /usr/include/eigen3 CACHE STRING "The directory of the Eigen library")
 
 find_package(OpenGL REQUIRED)
@@ -41,6 +42,10 @@ foreach(file ${PTGL_LIB_INC})
     get_filename_component(dir ${file} DIRECTORY)
     install(FILES ${file} DESTINATION include/${dir})
 endforeach()
+
+if(PTGL_BUILD_PLASTIC_DEMO)
+    add_subdirectory(examples/PlasticDemo)
+endif()
 
 
 

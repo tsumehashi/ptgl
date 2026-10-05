@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "ptgl/Util/MathUtil.h"
+#include "Material.h"
 
 namespace ptgl {
 
@@ -20,6 +21,7 @@ public:
     void setLineWidth(double width);
 
     void setColor(double r, double g, double b, double a = 1.0);
+    void setMaterial(const Material& material);
 
     // draw functions
     void drawPoint(const double pos[3]);
@@ -112,6 +114,7 @@ private:
         RpyRotateItemType,
         TransformItemType,
         ScaleItemType,
+        MaterialItemType, // Append to preserve the existing serialized command IDs.
         NumItemType,
     };
 
@@ -120,6 +123,7 @@ private:
     struct PointSizeItem { const int itemType = PointSizeItemType; double size;    };
     struct LineWidthItem { const int itemType = LineWidthItemType; double width;    };
     struct ColorItem { const int itemType = ColorItemType ;double rgba[4]; };
+    struct MaterialItem { const int itemType = MaterialItemType; double roughness; double reflectance; };
 
     struct DrawPointItem { const int itemType = DrawPointItemType;double pos[3]; };
     struct DrawLineItem { const int itemType = DrawLineItemType;double pos1[3]; double pos2[3]; };

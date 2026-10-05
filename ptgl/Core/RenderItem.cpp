@@ -76,6 +76,14 @@ void Render3DItem::setColor(double r, double g, double b, double a)
     setItem(data_, item);
 }
 
+void Render3DItem::setMaterial(const Material& material)
+{
+    MaterialItem item;
+    item.roughness = material.roughness;
+    item.reflectance = material.specularReflectance;
+    setItem(data_, item);
+}
+
 // draw functions
 void Render3DItem::drawPoint(const double pos[3])
 {
@@ -451,6 +459,7 @@ int Render3DItem::getItemSize(int itemType) const
     case RpyRotateItemType: return sizeof(RpyRotateItem); break;
     case TransformItemType: return sizeof(TransformItem); break;
     case ScaleItemType: return sizeof(ScaleItem); break;
+    case MaterialItemType: return sizeof(MaterialItem); break;
 
     default: return 0; break;
     }
@@ -484,6 +493,12 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     {
         ColorItem* item = (ColorItem*)ptr;
         r->setColor(item->rgba[0], item->rgba[1], item->rgba[2], item->rgba[3]);
+        break;
+    }
+    case MaterialItemType:
+    {
+        MaterialItem& item = *(MaterialItem*)ptr;
+        r->setMaterial(Material{item.roughness, item.reflectance});
         break;
     }
     case DrawPointItemType:
