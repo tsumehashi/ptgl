@@ -70,7 +70,8 @@ protected:
     std::atomic<bool> requireDropEvent_;
 
     std::string windowTitle_;
-    int width_;
+    int windowWidth_ = 640, windowHeight_ = 480; // GLFW screen coordinates.
+    int width_; // Framebuffer pixels, also used for picking and pointer events.
     int height_;
 
     int frameRate_;
@@ -148,12 +149,13 @@ void GLFWGraphicsDriver::setEnableTerminateGLFW(bool enable)
 
 void GLFWGraphicsDriver::setWindowSize(int width, int height)
 {
-    width_ = width;
-    height_ = height;
-
+    windowWidth_ = width;
+    windowHeight_ = height;
     if (glfwWindow_) {
-        glfwSetWindowSize(glfwWindow_, width_, height_);
-    }
+        glfwSetWindowSize(glfwWindow_, width, height);
+        int w, h; glfwGetFramebufferSize(glfwWindow_, &w, &h);
+        resizeGL(w, h);
+    } else { width_ = width; height_ = height; }
 }
 
 void GLFWGraphicsDriver::setWindowTitle(const std::string& title)
@@ -214,7 +216,7 @@ void GLFWGraphicsDriver::execute()
 
         glfwWindowHint(GLFW_SAMPLES, 4);
 
-        glfwWindow_ = glfwCreateWindow(width_, height_, windowTitle_.c_str(), NULL, NULL);
+        glfwWindow_ = glfwCreateWindow(windowWidth_, windowHeight_, windowTitle_.c_str(), NULL, NULL);
 
         glfwMakeContextCurrent(glfwWindow_);
         glfwSwapInterval(0);
@@ -242,11 +244,12 @@ void GLFWGraphicsDriver::execute()
         glfwSetKeyCallback(glfwWindow_, keyEvent);
         glfwSetDropCallback(glfwWindow_, dropEvent);
 
-        glfwSetWindowSizeCallback(glfwWindow_, resizeEvent);
+        glfwSetFramebufferSizeCallback(glfwWindow_, resizeEvent);
 
         // finish initialize
         waitInitEnd = false;
 
+        glfwGetFramebufferSize(glfwWindow_, &width_, &height_);
         resizeGL(width_, height_);
 
         executeGraphicsViewInitializeEvent();
@@ -321,6 +324,13 @@ void GLFWGraphicsDriver::mouseButtonEvent(GLFWwindow* window, int button, int ac
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
 
+    double x, y; int w, h, fw, fh;
+    glfwGetCursorPos(window, &x, &y);
+    glfwGetWindowSize(window, &w, &h);
+    glfwGetFramebufferSize(window, &fw, &fh);
+    driver->mouseCursorX_ = w > 0 ? x * fw / w : 0;
+    driver->mouseCursorY_ = h > 0 ? y * fh / h : 0;
+
     ptgl::MouseEvent::MouseButton btn = ptgl::MouseEvent::MouseButton::NoButton;
     switch (button) {
     case GLFW_MOUSE_BUTTON_LEFT: btn = ptgl::MouseEvent::MouseButton::LeftButton; break;
@@ -355,8 +365,11 @@ void GLFWGraphicsDriver::cursorPosEvent(GLFWwindow* window, double x, double y)
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
 
-    driver->mouseCursorX_ = x;
-    driver->mouseCursorY_ = y;
+    int w, h, fw, fh;
+    glfwGetWindowSize(window, &w, &h);
+    glfwGetFramebufferSize(window, &fw, &fh);
+    driver->mouseCursorX_ = w > 0 ? x * fw / w : 0;
+    driver->mouseCursorY_ = h > 0 ? y * fh / h : 0;
 
     auto event = driver->getGraphicsViewMouseEvent();
 

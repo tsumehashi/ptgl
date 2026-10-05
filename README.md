@@ -111,7 +111,7 @@ thread safe; renderer calls require the rendering thread and a current context.
 Existing `GraphicsView` and `QuickGraphicsView` keep their original appearance.
 The plastic view preserves the common picking/depth passes, overlays and 2D UI;
 overlays retain legacy shading. Spheres, cylinders and capsules use smoother
-meshes only in plastic mode, including picking. `generateRoundedBox()` provides
+meshes in Plastic and CAD modes, including picking. `generateRoundedBox()` provides
 an optional bevelled mesh without changing the shape of `drawBox()`.
 Plastic view owns its scene shader selection; use ordinary `GraphicsView` for
 applications that install a custom default shader.
@@ -288,7 +288,7 @@ shaders must implement `objectOpacity` and the output convention in
 The temporary targets resize with the view and are released before context
 destruction. Overlays, text and picking remain separate from composition.
 
-### CAD edge rendering (prototype)
+### CAD edge rendering
 
 ```cpp
 view.setRenderStyle(ptgl::PlasticGraphicsView::RenderStyle::CAD);
@@ -313,7 +313,7 @@ reports whether edge composition succeeded in the last frame. Unsupported edge
 targets/shaders fall back to shaded surfaces; a failed surface shader falls back
 to Legacy. Settings are validated and snapshotted at frame boundaries.
 
-This prototype captures packed depth and view normals in two extra scene passes
+The edge renderer captures packed depth and view normals in two extra scene passes
 (`RenderEdgeState`), then composites edges before overlays and text. Keep draw
 callbacks free of animation updates. The targets follow the viewport size and
 are released with the GL context. Lit surfaces with normals participate, including
@@ -322,12 +322,116 @@ Partially transparent items contribute their nearest surface: their visible edge
 remain solid, while edges of geometry behind them are suppressed. This does not
 display dashed hidden lines or trace edges through multiple transparent layers.
 
-Edge detection uses the rendered mesh, not CAD topology. Smooth sphere/cylinder
-tessellation is not drawn as a wire grid; hard imported vertex normals can still
-produce facet edges. Coplanar part boundaries and tangent fillet boundaries need
-explicit face/edge metadata for exact CAD-style display. Small details and line
-width/antialiasing are limited by framebuffer resolution. Angle thresholds and
-surface shading do not reconstruct missing CAD boundaries.
+CAD lighting can be adjusted independently from Plastic materials:
+
+```cpp
+auto cad = view.cadSettings();
+cad.brightness = 1.0; // [0,4]
+cad.ambient = 0.70;   // [0,2]
+cad.key = 0.36;       // [0,2], receives shadows
+cad.fill = 0.10;      // [0,2]
+cad.specular = 0.06;  // [0,1]
+cad.shininess = 32;   // [1,256]
+cad.fillDirection = {0.8, -0.2, 0.4}; // Nonzero view-space direction
+view.setCadSettings(cad);
+```
+
+#### Imported meshes and explicit boundaries
+
+`prepareCadMesh()` in `ptgl/Util/MeshProcessing.h` preprocesses indexed triangles
+or triangle soups from STL/OBJ loaders. It welds coincident positions for adjacency,
+removes degenerate triangles, calculates area-weighted smooth normals across soft
+joints, and preserves sharp normals and UV seams. Boundary, nonmanifold and sharp
+dihedral edges become explicit index pairs in `VertexSet::edges`. Triangle winding
+is retained; repair inconsistent winding in the importer. The returned mesh splits
+triangle corners to preserve seams, so allow additional CPU/GPU mesh memory.
+
+```cpp
+ptgl::MeshProcessingSettings options;
+options.creaseAngle = 35; // [0,180] degrees, geometric edge extraction
+options.weldTolerance = 1e-6; // [1e-12,1], fraction of the largest bounds dimension
+options.smoothNormals = true;
+auto mesh = ptgl::prepareCadMesh(loadedMesh, options);
+// Optional tangent/face boundary, using indices into mesh.vertices:
+mesh.edges.insert(mesh.edges.end(), {endpointA, endpointB});
+// On the render thread with its context current, upload once:
+renderer->registerMesh("part", mesh);
+// In the ordinary scene callback, after applying the object's transform:
+renderer->drawRegisteredVertices("part");
+// For changing geometry, drawMesh(mesh) uploads immediately instead.
+```
+
+Explicit input edges are also preserved through preprocessing. Edges need valid
+endpoint pairs and must lie on the mesh surface to pass its depth test. They are
+expanded into screen-space triangles, so width does not depend on OpenGL's native
+wide-line support. The nearest-surface depth suppresses hidden lines, including
+behind translucent selection surfaces. Existing `drawVertex()` continues to use
+screen-space edge detection; use `drawMesh()`/`registerMesh()` to include metadata.
+`registerMesh(name, mesh, true)` replaces both geometry and its edge metadata.
+
+Screen-space detection alone cannot recover coplanar part boundaries or tangent
+fillet boundaries. Import face/edge metadata for those boundaries; the demo's
+rounded box supplies explicit tangent seams. No CAD topology is inferred from
+triangle normals beyond geometric creases. Tiny details remain resolution-limited.
+
+#### Quality, cache and measurements
+
+```cpp
+auto quality = view.renderQualitySettings();
+quality.edges = ptgl::EdgeQuality::Balanced; // Default: 2x per axis
+quality.cacheStaticEdges = true; // Opt-in; default false
+quality.collectTimings = true;   // Default false
+view.setRenderQualitySettings(quality);
+// After changes to geometry, transforms, visibility, sidedness, or zero opacity:
+view.invalidateEdgeCache();
+const auto stats = view.renderStatistics(); // Last completed frame
+```
+
+Fast uses 1x, Balanced 2x and High 3x edge targets per axis. Normal/depth detection
+and explicit edges are composed into this target, then box-filtered to framebuffer
+pixels. This reduces diagonal stair steps and motion flicker while retaining the
+default 1px width. Higher quality costs approximately 4x/9x target pixels; allocation
+falls back to a lower scale if resources cannot be allocated. `edgeSupersampling`
+and `edgeTargetWidth/Height` report the scale and dimensions actually used.
+
+Static caching reuses the depth/normal captures and explicit edge commands.
+Camera, projection and target-size changes trigger recapture automatically.
+Applications must call `invalidateEdgeCache()` when scene content changes, including
+geometry drawn directly by callbacks. Lighting, edge width/color/angle, and selection
+opacity changes that stay above zero do not require recapture. Keep caching disabled
+for animated content unless invalidation is provided. The demo invalidates after
+TransformHandle changes, and retains cached surfaces while the light moves.
+
+`edgeDrawCalls` and `edgeTriangles` count geometry submitted during the two capture
+passes; both are zero when reused. They exclude feature-line composition and other
+render passes. `edgeCpuMilliseconds` covers edge allocation/capture/composition CPU
+submission, excluding the enclosing frame. `edgeGpuMilliseconds` is an asynchronous
+desktop GPU timer sample, identified by `edgeGpuSampleFrame`; it never waits for the
+GPU and is `-1` until available. GLES or unsupported timer contexts provide CPU
+measurements only. Disabling timing avoids query overhead. The demo's Q cycles edge
+quality, C toggles caching, P shows timing, and comma/period adjust CAD brightness.
+
+A local measurement on NVIDIA RTX A4000 (OpenGL 4.6, 640x480, 405,000
+triangles in a registered mesh, shadows disabled, 12 warmup frames and 30 measured
+frames) gave the following mean edge-pass times. These exclude the rest of the
+frame and vary with hardware, resolution and geometry.
+
+| Edge quality | CPU, uncached / cached | GPU, uncached / cached |
+| --- | --- | --- |
+| Fast (1x) | 0.047 / 0.026 ms | 0.127 / 0.049 ms |
+| Balanced (2x) | 0.049 / 0.023 ms | 0.237 / 0.122 ms |
+| High (3x) | 0.045 / 0.027 ms | 0.414 / 0.247 ms |
+
+The GLFW driver uses framebuffer pixels for rendering, picking and pointer events,
+converting GLFW cursor coordinates on HiDPI displays. `setWindowSize()` still uses
+GLFW screen units. An edge width of 1 means one physical framebuffer pixel.
+
+`PlasticGraphicsView` retains its public API and nested `RenderStyle` name (also
+available as `ptgl::RenderStyle`). It snapshots settings and coordinates the view;
+`SceneStyleRenderer` selects the style, `PlasticSurfaceRenderer` and
+`CadSurfaceRenderer` own surface shading, and `CadEdgeRenderer` owns edge passes.
+Shadows, picking, transparency and overlays remain shared. Rebuild consumers after
+updating because `VertexSet` and renderer class layouts have changed.
 
 ## License
 Licensed under the MIT license. see LICENSE for details.

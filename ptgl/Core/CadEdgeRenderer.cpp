@@ -1,5 +1,7 @@
 #include "CadEdgeRenderer.h"
 #include <cmath>
+#include <chrono>
+#include <limits>
 #include "TransparencyRenderer.h"
 #include "PlasticShaderSource.h"
 
@@ -31,39 +33,6 @@ void main() {
 
 void CadEdgeRenderer::initialize()
 {
-    surface_ = sceneProgram(PlasticShaderSource::VertexShaderSource, std::string(R"GLSL(
-#ifdef GL_ES
-precision mediump float;
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-#define PTGL_SHADOW_PRECISION highp
-#else
-#define PTGL_SHADOW_PRECISION mediump
-#endif
-#else
-#define PTGL_SHADOW_PRECISION
-#endif
-varying vec3 vNormal;
-uniform vec4 color;
-uniform float lightEffectRate;
-)GLSL") + transparencyShaderFunctions() + PlasticShaderSource::ShadowFragmentShaderSource + R"GLSL(
-void main() {
-    if (lightEffectRate <= 0.0 || dot(vNormal, vNormal) < 0.000001) {
-        ptglOutput(color); return;
-    }
-    vec3 n = normalize(vNormal);
-    if (!gl_FrontFacing) n = -n;
-    // A brighter ambient base keeps faces readable even in shadow. The key
-    // direction is shared with the world-space shadow map; fill stays in view space.
-    float visible = keyVisibility(n);
-    float diffuse = 0.70 + 0.36 * max(dot(n, keyDirection), 0.0) * visible
-                         + 0.10 * max(dot(n, normalize(vec3(0.8, -0.2, 0.4))), 0.0);
-    vec3 halfVector = keyDirection + vec3(0,0,1);
-    halfVector /= max(length(halfVector), 0.0001);
-    float highlight = 0.06 * pow(max(dot(n, halfVector), 0.0), 32.0) * visible;
-    ptglOutput(vec4(mix(color.rgb, color.rgb * diffuse + highlight,
-                       clamp(lightEffectRate, 0.0, 1.0)), color.a));
-}
-)GLSL");
     if (!glGenFramebuffers || !glBindFramebuffer || !glGenRenderbuffers)
         return;
     SceneGLState state;
@@ -157,13 +126,71 @@ void main() {
     // Nearest-filtered depth/normal samples jump at whole pixels. Interpolate
     // edge coverage, not sample positions, so every fractional width step is
     // visible without interpolating packed depth across unrelated surfaces.
-    float narrow = edgeCoverage(1.0, center, depth, p, pixelSize);
-    float alpha = narrow * min(edgeWidth * 0.5, 1.0);
-    if (edgeWidth > 2.0) {
-        float wide = max(narrow, edgeCoverage(2.0, center, depth, p, pixelSize));
-        alpha = mix(narrow, wide, edgeWidth * 0.5 - 1.0);
-    }
+    float radius = max(1.0, edgeWidth * 0.5);
+    float low = floor(radius), high = ceil(radius);
+    float alpha = mix(edgeCoverage(low,center,depth,p,pixelSize),
+                      edgeCoverage(high,center,depth,p,pixelSize), radius-low);
+    alpha *= min(edgeWidth * 0.5, 1.0);
     gl_FragColor = vec4(edgeColor * alpha, alpha);
+}
+)GLSL");
+    resolve_ = sceneProgram(R"GLSL(
+attribute vec3 position;
+varying vec2 uv;
+void main() { gl_Position=vec4(position,1.0); uv=position.xy*0.5+0.5; }
+)GLSL",
+                            R"GLSL(
+#ifdef GL_ES
+precision highp float;
+#endif
+varying vec2 uv;
+uniform sampler2D edgeMask;
+uniform vec2 texel;
+uniform float scale;
+void main() {
+    vec4 sum=vec4(0.0);
+    for(int y=0;y<3;++y) for(int x=0;x<3;++x) {
+        if(float(x)<scale && float(y)<scale)
+            sum+=texture2D(edgeMask,uv+(vec2(float(x),float(y))-(scale-1.0)*0.5)*texel);
+    }
+    gl_FragColor=sum/(scale*scale);
+}
+)GLSL");
+    feature_ = sceneProgram(R"GLSL(
+#ifdef GL_ES
+precision highp float;
+#endif
+attribute vec3 position, normal;
+attribute vec2 corner;
+uniform mat4 mvp;
+uniform vec2 viewport;
+uniform float width;
+varying float side;
+void main() {
+    vec4 a=mvp*vec4(position,1.0), b=mvp*vec4(normal,1.0);
+    float da=a.z+a.w, db=b.z+b.w;
+    if(da<=0.0 && db<=0.0) { gl_Position=vec4(2,2,2,1); side=0.0; return; }
+    if(da<0.0) a=mix(a,b,da/(da-db));
+    if(db<0.0) b=mix(b,a,db/(db-max(da,0.0)));
+    a/=max(a.w,0.000001); b/=max(b.w,0.000001);
+    vec2 d=(b.xy-a.xy)*viewport;
+    vec2 n=vec2(-d.y,d.x)/max(length(d),0.000001);
+    gl_Position=mix(a,b,corner.x);
+    gl_Position.xy+=n*corner.y*(width+1.0)/viewport;
+    gl_Position.z-=0.00001;
+    side=corner.y;
+}
+)GLSL",
+                            R"GLSL(
+#ifdef GL_ES
+precision highp float;
+#endif
+varying float side;
+uniform vec3 edgeColor;
+uniform float width;
+void main() {
+    float alpha=clamp((width+1.0)*0.5*(1.0-abs(side)),0.0,1.0);
+    gl_FragColor=vec4(edgeColor*alpha,alpha);
 }
 )GLSL");
     if (!capture_ || !composite_)
@@ -179,16 +206,29 @@ void CadEdgeRenderer::release()
     depth_.release();
     normals_.release();
     quad_.release();
-    surface_.reset();
     capture_.reset();
     composite_.reset();
+    resolve_.reset();
+    feature_.reset();
+    mask_.release();
+    featureBuffer_.release();
+    features_.clear();
+    cached_ = false;
+    requestedWidth_ = requestedHeight_ = requestedScale_ = actualScale_ = 0;
+    timer_.release();
 }
 
-bool CadEdgeRenderer::render(const Eigen::Matrix4d &projection,
-                             const PlasticGraphicsView::EdgeSettings &settings,
-                             const std::function<void(bool)> &draw)
+void CadEdgeRenderer::addFeatures(std::shared_ptr<const VertexList> vertices, const Eigen::Matrix4d &model)
 {
-    if (!capture_ || !composite_ || !quad_.isValid())
+    if (vertices && !vertices->empty())
+        features_.push_back({std::move(vertices), model});
+}
+bool CadEdgeRenderer::render(const Eigen::Matrix4d &projection, const Eigen::Matrix4d &view,
+                             const PlasticGraphicsView::EdgeSettings &settings,
+                             const RenderQualitySettings &quality, std::uint64_t revision,
+                             RenderStatistics &stats, const std::function<void(bool)> &draw)
+{
+    if (!capture_ || !composite_ || !resolve_ || !feature_ || !quad_.isValid())
         return false;
     SceneGLState state;
     if (state.features.es && !glClearDepthf) {
@@ -198,27 +238,73 @@ bool CadEdgeRenderer::render(const Eigen::Matrix4d &projection,
             return false;
     }
     const int w = state.viewport[2], h = state.viewport[3];
-    if (!depth_.allocate(w, h) || !normals_.allocate(w, h))
+    if (w <= 0 || h <= 0)
         return false;
-    for (bool depth : {true, false}) {
-        glBindFramebuffer(GL_FRAMEBUFFER, depth ? depth_.framebuffer : normals_.framebuffer);
-        glViewport(0, 0, w, h);
-        state.rasterDefaults();
-        // Alpha is the coverage mask. Transparent items are nearest surfaces
-        // here, independent of their color-pass opacity and shadow-casting flag.
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        draw(depth);
+    const auto start = std::chrono::steady_clock::now();
+    if (quality.collectTimings)
+        timer_.begin(stats);
+    struct EndTimer {
+        RenderTimer &timer;
+        ~EndTimer() { timer.end(); }
+    } endTimer{timer_};
+    const int requestedScale = quality.edges == EdgeQuality::High       ? 3
+                               : quality.edges == EdgeQuality::Balanced ? 2
+                                                                        : 1;
+    // Keep a successful fallback until the requested size/quality changes. This
+    // avoids retrying failed allocations and invalidating static captures every frame.
+    int scale = requestedWidth_ == w && requestedHeight_ == h && requestedScale_ == requestedScale
+                    ? actualScale_
+                    : requestedScale;
+    const int oldWidth = depth_.width, oldHeight = depth_.height;
+    for (; scale > 0; --scale) {
+        if (w > std::numeric_limits<int>::max() / scale || h > std::numeric_limits<int>::max() / scale)
+            continue;
+        if (depth_.width != w * scale || depth_.height != h * scale || normals_.width != w * scale ||
+            normals_.height != h * scale)
+            cached_ = false;
+        if (depth_.allocate(w * scale, h * scale) && normals_.allocate(w * scale, h * scale) &&
+            mask_.allocate(w * scale, h * scale, false, false))
+            break;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, state.drawFbo);
-    glViewport(state.viewport[0], state.viewport[1], w, h);
+    if (!scale) {
+        cached_ = false;
+        return false;
+    }
+    const int tw = w * scale, th = h * scale;
+    requestedWidth_ = w;
+    requestedHeight_ = h;
+    requestedScale_ = requestedScale;
+    actualScale_ = scale;
+    stats.edgeTargetWidth = tw;
+    stats.edgeTargetHeight = th;
+    stats.edgeSupersampling = scale;
+    bool reuse = quality.cacheStaticEdges && cached_ && revision == revision_ && oldWidth == tw &&
+                 oldHeight == th && projection == projection_ && view == view_;
+    stats.edgeCaptureReused = reuse;
+    if (!reuse) {
+        cached_ = false;
+        features_.clear();
+        for (bool depth : {true, false}) {
+            glBindFramebuffer(GL_FRAMEBUFFER, depth ? depth_.framebuffer : normals_.framebuffer);
+            glViewport(0, 0, tw, th);
+            state.rasterDefaults();
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            draw(depth);
+        }
+        cached_ = quality.cacheStaticEdges;
+        revision_ = revision;
+        projection_ = projection;
+        view_ = view;
+    }
+    // The mask shares the nearest-surface depth buffer for explicit feature edges.
+    glBindFramebuffer(GL_FRAMEBUFFER, mask_.framebuffer);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, normals_.depth);
+    glViewport(0, 0, tw, th);
     state.rasterDefaults();
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendEquation(GL_FUNC_ADD);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     composite_->bind();
     for (int unit = 0; unit < 2; ++unit) {
         glActiveTexture(GL_TEXTURE0 + unit);
@@ -229,13 +315,54 @@ bool CadEdgeRenderer::render(const Eigen::Matrix4d &projection,
     glUniform1i(composite_->uniform("surfaceDepth"), 0);
     glUniform1i(composite_->uniform("surfaceNormals"), 1);
     composite_->setParameter("inverseProjection", Eigen::Matrix4d(projection.inverse()));
-    composite_->setParameter("texel", 1.0 / w, 1.0 / h);
+    composite_->setParameter("texel", 1.0 / tw, 1.0 / th);
     composite_->setParameter("edgeColor", settings.color[0], settings.color[1], settings.color[2]);
-    composite_->setParameter("edgeWidth", settings.width);
+    composite_->setParameter("edgeWidth", settings.width * scale);
     composite_->setParameter("normalThreshold",
                              1.0 - std::cos(settings.normalAngle * 3.141592653589793 / 180.0));
     Renderer3D::drawVertexBufferObject(quad_, composite_->attribute("position"), GL_TRIANGLES);
-    composite_->unbind();
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    if (!features_.empty()) {
+        glEnable(GL_DEPTH_TEST);
+        feature_->bind();
+        feature_->setParameter("viewport", double(tw), double(th));
+        feature_->setParameter("width", settings.width * scale);
+        feature_->setParameter("edgeColor", settings.color[0], settings.color[1], settings.color[2]);
+        const GLint attributes[] = {feature_->attribute("position"), feature_->attribute("normal"),
+                                    feature_->attribute("corner")};
+        for (const auto &command : features_) {
+            feature_->setParameter("mvp", Eigen::Matrix4d(projection * view * command.model));
+            const auto &vertices = *command.vertices;
+            if (!featureBuffer_.vertexVBO())
+                featureBuffer_.loadVertices(vertices.data(), vertices.size(), GL_DYNAMIC_DRAW);
+            else
+                featureBuffer_.updateVertices(vertices.data(), vertices.size());
+            glBindBuffer(GL_ARRAY_BUFFER, featureBuffer_.vertexVBO());
+            for (int i = 0; i < 3; ++i) {
+                glEnableVertexAttribArray(attributes[i]);
+                glVertexAttribPointer(attributes[i], i == 2 ? 2 : 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                                      reinterpret_cast<const void *>(size_t(i) * 3 * sizeof(float)));
+            }
+            glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
+            for (auto attr : attributes)
+                glDisableVertexAttribArray(attr);
+        }
+        glDisable(GL_DEPTH_TEST);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, state.drawFbo);
+    glViewport(state.viewport[0], state.viewport[1], w, h);
+    resolve_->bind();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mask_.texture);
+    glUniform1i(resolve_->uniform("edgeMask"), 0);
+    resolve_->setParameter("texel", 1.0 / tw, 1.0 / th);
+    resolve_->setParameter("scale", double(scale));
+    Renderer3D::drawVertexBufferObject(quad_, resolve_->attribute("position"), GL_TRIANGLES);
+    if (quality.collectTimings)
+        stats.edgeCpuMilliseconds =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     return true;
 }
 } // namespace detail

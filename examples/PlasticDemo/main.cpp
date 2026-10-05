@@ -10,6 +10,7 @@
 #include "ptgl/Core/SphericalCamera.h"
 #include "ptgl/Driver/GLFWGraphicsDriver.h"
 #include "ptgl/Handle/TransformHandle.h"
+#include "ptgl/Util/MeshProcessing.h"
 
 int main()
 {
@@ -28,6 +29,12 @@ int main()
     shadows.autoFit = true;
     shadows.softness = 2.5;
     view.setShadowSettings(shadows);
+
+    auto quality = view.renderQualitySettings();
+    quality.cacheStaticEdges = true;
+    quality.collectTimings = true;
+    view.setRenderQualitySettings(quality);
+    bool showStatistics = false;
 
     bool movingLight = false;
     double lightAngle = -2.35619449019;
@@ -49,8 +56,21 @@ int main()
         camera->setElevation(25);
     });
 
-    // Generated once; drawVertex reuses the renderer's upload buffer.
+    // Preprocess once, then keep the geometry in a registered GPU buffer.
     auto roundedBox = ptgl::PrimitiveShapeVertex::generateRoundedBox({1.5, 1.5, 1.5}, 0.18);
+    // Explicit tangent boundaries between flat faces and the rounded fillets.
+    // Imported CAD meshes can supply the same pairs from their face metadata.
+    for (int axis=0; axis<3; ++axis) for (int sign : {-1,1}) {
+        GLuint base=static_cast<GLuint>(roundedBox.vertices.size());
+        for (const auto& corner : {std::pair<double,double>{-1,-1}, {1,-1}, {1,1}, {-1,1}}) {
+            Eigen::Vector3d p=Eigen::Vector3d::Zero(), n=Eigen::Vector3d::Zero();
+            p[axis]=sign*0.75; p[(axis+1)%3]=corner.first*0.57; p[(axis+2)%3]=corner.second*0.57;
+            n[axis]=sign;
+            roundedBox.vertices.emplace_back(float(p.x()),float(p.y()),float(p.z()),float(n.x()),float(n.y()),float(n.z()));
+        }
+        for(GLuint i=0;i<4;++i) roundedBox.edges.insert(roundedBox.edges.end(),{base+i,base+(i+1)%4});
+    }
+    roundedBox = ptgl::prepareCadMesh(roundedBox);
     view.setRenderSceneFunction([&](ptgl::Renderer3D* r) {
         const auto material = r->material();
         r->setMaterial({0.85, 0.04});
@@ -87,11 +107,26 @@ int main()
     });
     addObject("Rounded box", {0, 0, 0.75}, [&](ptgl::Renderer3D* r) {
         r->setColor(0.16, 0.52, 0.83);
-        r->drawVertex(r->p0(), r->R0(), roundedBox.vertices, roundedBox.indices);
+        if (!r->isRegisteredVertices("roundedBox")) r->registerMesh("roundedBox", roundedBox);
+        r->drawRegisteredVertices("roundedBox");
     });
     addObject("Cylinder", {0, 2.1, 0.8}, [](ptgl::Renderer3D* r) {
         r->setColor(0.95, 0.64, 0.12);
         r->drawCylinder(r->p0(), r->R0(), 1.6, 0.72);
+    });
+
+    // Handle changes occur during event processing; invalidate before this frame
+    // renders. Selection fading keeps the same nearest surfaces and needs no reset.
+    std::vector<Eigen::Vector3d> lastPositions(objects.size(),Eigen::Vector3d::Zero());
+    std::vector<Eigen::Matrix3d> lastRotations(objects.size(),Eigen::Matrix3d::Identity());
+    view.setPostEventProcessFunction([&] {
+        bool changed=false;
+        for(size_t i=0;i<objects.size();++i) {
+            const auto& t=objects[i].transform;
+            if(lastPositions[i]!=t->position() || lastRotations[i]!=t->rotation()) changed=true;
+            lastPositions[i]=t->position(); lastRotations[i]=t->rotation();
+        }
+        if(changed) view.invalidateEdgeCache();
     });
 
     auto handle = std::make_shared<ptgl::handle::TransformHandle>();
@@ -123,6 +158,20 @@ int main()
         if (e->key() == ptgl::Key::Key_Space && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
             view.setRenderStyle(view.renderStyle() == Style::Plastic ? Style::CAD
                               : view.renderStyle() == Style::CAD ? Style::Legacy : Style::Plastic);
+        } else if (e->key() == ptgl::Key::Key_Q && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            auto settings=view.renderQualitySettings();
+            settings.edges=settings.edges==ptgl::EdgeQuality::Fast ? ptgl::EdgeQuality::Balanced
+                : settings.edges==ptgl::EdgeQuality::Balanced ? ptgl::EdgeQuality::High : ptgl::EdgeQuality::Fast;
+            view.setRenderQualitySettings(settings);
+        } else if (e->key() == ptgl::Key::Key_P && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            showStatistics=!showStatistics;
+        } else if (e->key() == ptgl::Key::Key_C && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+            auto settings=view.renderQualitySettings(); settings.cacheStaticEdges=!settings.cacheStaticEdges;
+            view.setRenderQualitySettings(settings); view.invalidateEdgeCache();
+        } else if (e->key() == ptgl::Key::Key_Comma || e->key() == ptgl::Key::Key_Period) {
+            auto settings=view.cadSettings();
+            settings.brightness=std::clamp(settings.brightness+(e->key()==ptgl::Key::Key_Period ? 0.1 : -0.1),0.0,4.0);
+            view.setCadSettings(settings);
         } else if (e->key() == ptgl::Key::Key_B && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
             auto settings = view.edgeSettings();
             settings.enabled = !settings.enabled;
@@ -179,7 +228,14 @@ int main()
         r->drawText(20, 80, cad ? "B: toggle edges   [ / ]: edge width   S: shadows   L: moving light"
             : "S: shadows   [ / ]: softness   L: moving light   E: environment reflections   A: ambient occlusion");
         r->drawText(20, 105, "Left click: select   Drag arrows/planes: move   Drag rings: rotate   Click floor/background: deselect");
-        r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none")));
+        if(cad && showStatistics) {
+            const auto stats=view.renderStatistics();
+            r->drawText(20,130,"Edges " + std::to_string(stats.edgeSupersampling) + "x | CPU "
+                + std::to_string(stats.edgeCpuMilliseconds).substr(0,5) + " ms | GPU "
+                + (stats.edgeGpuMilliseconds<0 ? "n/a" : std::to_string(stats.edgeGpuMilliseconds).substr(0,5)+" ms")
+                + " | captures " + (stats.edgeCaptureReused ? "reused" : std::to_string(stats.edgeDrawCalls)+" draws"));
+        } else r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none"))
+            + (cad ? " | Q: quality  P: timings  C: cache  , / .: brightness" : ""));
     });
 
     view.initialize();

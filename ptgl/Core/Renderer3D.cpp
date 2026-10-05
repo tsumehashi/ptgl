@@ -1,3 +1,5 @@
+#include <numeric>
+#include <stdexcept>
 #include "Renderer3D.h"
 #include <iostream>
 #include <algorithm>
@@ -583,26 +585,19 @@ void Renderer3D::registerVertices(const std::string& name, const VertexList& ver
 
 void Renderer3D::registerVertices(const std::string& name, const VertexList& vertices, const IndexList& indices, bool override)
 {
-    auto fitr = registeredVerticesVBOInfoMap_.find(name);
-    if (fitr != registeredVerticesVBOInfoMap_.end()) {
-        // find
-        if (override) {
-            // update
-            auto& vboInfo = fitr->second;
-//            auto& vbo = vboInfo.vbo;
-            vboInfo.numVertices = vertices.size();
-//            updateVertexBufferObject(vbo.vertexVBO(), vertices.data(), vertices.size());
-        }
-
+    auto found = registeredVerticesVBOInfoMap_.find(name);
+    if (found != registeredVerticesVBOInfoMap_.end() && !override) return;
+    auto& info = registeredVerticesVBOInfoMap_[name];
+    if (!info.vbo.vertexVBO()) {
+        info.vbo.loadVertices(vertices.data(), vertices.size(), GL_DYNAMIC_DRAW);
+        info.vbo.loadIndices(indices.data(), indices.size(), GL_DYNAMIC_DRAW);
     } else {
-        // not find
-        VBOInfo vboInfo;
-        vboInfo.numVertices = vertices.size();
-        vboInfo.numIndices = indices.size();
-        vboInfo.vbo.loadVertices(vertices.data(), vertices.size(), GL_DYNAMIC_DRAW);
-        vboInfo.vbo.loadIndices(indices.data(), indices.size(), GL_DYNAMIC_DRAW);
-        registeredVerticesVBOInfoMap_.insert({name, vboInfo});
+        info.vbo.updateVertices(vertices.data(), vertices.size());
+        info.vbo.updateIndices(indices.data(), indices.size());
     }
+    info.numVertices = vertices.size();
+    info.numIndices = indices.size();
+    info.featureEdges.reset();
 }
 
 bool Renderer3D::isRegisteredVertices(const std::string& name)
@@ -623,8 +618,46 @@ void Renderer3D::drawRegisteredVertices(const std::string& name)
         shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
         updateModelMatrixParameter(affine);
 
-           submitMesh(vbo);
+        submitMesh(vbo);
+        if (acceptsFeatureEdges() && vboInfo.featureEdges) submitFeatureEdges(vboInfo.featureEdges);
     }
+}
+
+namespace {
+std::shared_ptr<const VertexList> featureVertices(const VertexSet& mesh)
+{
+    if (mesh.edges.empty()) return {};
+    if (mesh.edges.size() % 2) throw std::invalid_argument("Feature edges must be index pairs");
+    auto result = std::make_shared<VertexList>();
+    result->reserve(mesh.edges.size() * 3);
+    for (size_t i=0; i<mesh.edges.size(); i+=2) {
+        if (mesh.edges[i]>=mesh.vertices.size() || mesh.edges[i+1]>=mesh.vertices.size())
+            throw std::invalid_argument("Feature edge index out of range");
+        const auto& a=mesh.vertices[mesh.edges[i]];
+        const auto& b=mesh.vertices[mesh.edges[i+1]];
+        for (const auto& corner : {std::pair<float,float>{0,-1}, {1,-1}, {0,1}, {0,1}, {1,-1}, {1,1}})
+            result->emplace_back(a.x,a.y,a.z,b.x,b.y,b.z,corner.first,corner.second);
+    }
+    return result;
+}
+}
+void Renderer3D::drawMesh(const VertexSet& mesh)
+{
+    // drawVertex's indexed path needs an index for every triangle-soup vertex.
+    if (mesh.indices.empty()) {
+        IndexList indices(mesh.vertices.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        drawVertex(mesh.vertices, indices);
+    } else drawVertex(mesh.vertices, mesh.indices);
+    if (acceptsFeatureEdges()) submitFeatureEdges(featureVertices(mesh));
+}
+void Renderer3D::registerMesh(const std::string& name, const VertexSet& mesh, bool override)
+{
+    if (isRegisteredVertices(name) && !override) return;
+    auto edges = featureVertices(mesh); // Validate before replacing a registered mesh.
+    if (mesh.indices.empty()) registerVertices(name, mesh.vertices, override);
+    else registerVertices(name, mesh.vertices, mesh.indices, override);
+    registeredVerticesVBOInfoMap_.at(name).featureEdges = std::move(edges);
 }
 
 void Renderer3D::drawVertex(const VertexList& vertices, const IndexList& indices)

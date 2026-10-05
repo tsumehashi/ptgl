@@ -241,6 +241,10 @@ public:
     bool isRegisteredVertices(const std::string& name);
     void drawRegisteredVertices(const std::string& name);
 
+    // Optional preprocessed/explicit edges are drawn in CAD mode only.
+    void drawMesh(const VertexSet& mesh);
+    void registerMesh(const std::string& name, const VertexSet& mesh, bool override = false);
+
     void drawVertex(const VertexList& vertices, const IndexList& indices);
     void drawVertex(const double pos[3], const double R[9], const VertexList& vertices, const IndexList& indices);
     template <typename T = vec3d, typename U = vec9d>
@@ -329,7 +333,9 @@ protected:
     }
 
     GraphicsView* graphicsView_ = nullptr;
-    void submitMesh(const VertexBufferObject& vbo, GLenum mode = GL_TRIANGLES);
+    virtual void submitMesh(const VertexBufferObject& vbo, GLenum mode = GL_TRIANGLES);
+    virtual bool acceptsFeatureEdges() const { return false; }
+    virtual void submitFeatureEdges(std::shared_ptr<const VertexList>) {}
     bool collectingBounds_ = false;
     Eigen::AlignedBox3d sceneBounds_;
     Eigen::Affine3d modelTransform_ = Eigen::Affine3d::Identity();
@@ -377,6 +383,7 @@ protected:
 
     struct VBOInfo {
         VertexBufferObject vbo;
+        std::shared_ptr<const VertexList> featureEdges;
         size_t numVertices = 0;
         size_t numIndices = 0;
     };

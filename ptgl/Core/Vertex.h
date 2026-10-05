@@ -45,6 +45,8 @@ typedef std::shared_ptr<IndexList> IndexListPtr;
 struct VertexSet {
     VertexList vertices;
     IndexList indices;
+    // Optional feature edges, as pairs of vertex indices (including tangent seams).
+    IndexList edges;
 };
 
 inline void applyScale(VertexList& vertices, double sx, double sy, double sz)

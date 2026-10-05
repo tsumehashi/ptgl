@@ -3,24 +3,17 @@
 
 #include <mutex>
 #include "GraphicsView.h"
+#include "RenderSettings.h"
 
 namespace ptgl {
 
-struct PlasticLighting {
-    // Directions point toward the lights in world coordinates (Z is up).
-    std::array<double, 3> keyDirection{{1.0, -1.0, 2.0}};
-    std::array<double, 3> keyColor{{4.0, 3.8, 3.5}};
-    std::array<double, 3> fillDirection{{-1.0, -0.5, 1.0}};
-    std::array<double, 3> fillColor{{0.8, 0.9, 1.1}};
-    // Linear RGB irradiance for a simple hemispheric ambient light.
-    std::array<double, 3> skyColor{{0.55, 0.60, 0.70}};
-    std::array<double, 3> groundColor{{0.12, 0.10, 0.08}};
-    double exposure = 1.0;
-};
-
 class PlasticGraphicsView : public GraphicsView {
 public:
-    enum class RenderStyle { Legacy, Plastic, CAD };
+    using RenderStyle = ptgl::RenderStyle;
+    using CadSettings = ptgl::CadSettings;
+    using EdgeQuality = ptgl::EdgeQuality;
+    using RenderQualitySettings = ptgl::RenderQualitySettings;
+    using RenderStatistics = ptgl::RenderStatistics;
 
     explicit PlasticGraphicsView(GraphicsDriverPtr driver);
     ~PlasticGraphicsView() override;
@@ -72,7 +65,7 @@ public:
     AmbientOcclusionSettings ambientOcclusionSettings() const;
     bool ambientOcclusionActive() const;
 
-    // CAD uses muted surface shading and visible, screen-space edges. Width is
+    // CAD uses bright surface shading and visible mesh/screen-space edges. Width is
     // measured in framebuffer pixels; angle controls sharp normal transitions.
     struct EdgeSettings {
         bool enabled = true;
@@ -84,6 +77,15 @@ public:
     EdgeSettings edgeSettings() const;
     bool cadRenderingAvailable() const;
     bool edgesActive() const;
+    void setCadSettings(const CadSettings& settings);
+    CadSettings cadSettings() const;
+    void setRenderQualitySettings(const RenderQualitySettings& settings);
+    RenderQualitySettings renderQualitySettings() const;
+    // Needed after scene-content changes when cacheStaticEdges is enabled.
+    // Thread safe; takes effect at the next frame boundary.
+    void invalidateEdgeCache();
+    // Last completed frame; GPU samples can originate from an earlier frame.
+    RenderStatistics renderStatistics() const;
 
     // False until the GL context has successfully compiled the plastic shader.
     // A compilation failure is logged and rendering falls back to Legacy.
@@ -104,6 +106,10 @@ private:
     EnvironmentSettings environment_;
     AmbientOcclusionSettings occlusion_;
     EdgeSettings edges_;
+    CadSettings cad_;
+    RenderQualitySettings quality_;
+    RenderStatistics statistics_;
+    std::uint64_t edgeRevision_ = 0;
 };
 
 } // namespace ptgl
