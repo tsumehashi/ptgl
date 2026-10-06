@@ -9,6 +9,7 @@
 #include "Camera.h"
 #include "DefaultShaderSource.h"
 #include "PrimitiveShapeVertex.h"
+#include "ptgl/Util/MeshSection.h"
 
 namespace ptgl {
 
@@ -42,6 +43,10 @@ void Renderer3D::finalizeConfiguration()
     registeredVerticesVBOInfoMap_.clear();
     for (auto& mesh : roundedMeshes_) mesh.info.vbo.release();
     roundedMeshes_.clear();
+    for (auto& entry : sharedMeshes_) entry.second.info.vbo.release();
+    sharedMeshes_.clear();
+    for (auto& entry : sectionMeshes_) { entry.surface.vbo.release(); entry.cap.vbo.release(); }
+    sectionMeshes_.clear();
 }
 
 void Renderer3D::initializeConfiguration()
@@ -520,6 +525,10 @@ void Renderer3D::drawWorldAxis(double length)
 
 void Renderer3D::submitMesh(const VertexBufferObject& vbo, GLenum mode)
 {
+    if (!sectionBypass_) {
+        lastSectionStatus_ = SectionStatus::Disabled;
+        if (sectionActive() && mode == GL_TRIANGLES && submitSectionMesh(vbo, mode)) return;
+    }
     if (collectingBounds_) {
         if (!vbo.bounds().isEmpty() && lightEffectRate_ > 0.0) {
             for (int i = 0; i < 8; ++i) {
@@ -529,6 +538,7 @@ void Renderer3D::submitMesh(const VertexBufferObject& vbo, GLenum mode)
         }
         return;
     }
+    meshSubmitted(vbo, mode);
     drawVertexBufferObject(vbo, attrVertexLocation_, attrNormalLocation_, mode);
 }
 
@@ -658,6 +668,155 @@ std::shared_ptr<const VertexList> featureVertices(const VertexSet& mesh)
     return result;
 }
 }
+void Renderer3D::uploadMesh(VBOInfo& info, const VertexSet& mesh)
+{
+    if (mesh.vertices.empty() || mesh.indices.empty()) return;
+    info.featureEdges = featureVertices(mesh);
+    info.numVertices = mesh.vertices.size(); info.numIndices = mesh.indices.size();
+    info.vbo.loadVertices(mesh.vertices.data(), mesh.vertices.size());
+    info.vbo.loadIndices(mesh.indices.data(), mesh.indices.size());
+}
+
+void Renderer3D::drawSharedMesh(const std::shared_ptr<const VertexSet>& mesh)
+{
+    if (!mesh || mesh->vertices.empty()) { lastSectionStatus_ = SectionStatus::Empty; return; }
+    auto found = sharedMeshes_.find(mesh.get());
+    if (found != sharedMeshes_.end() && found->second.source.expired()) {
+        found->second.info.vbo.release(); sharedMeshes_.erase(found); found = sharedMeshes_.end();
+    }
+    if (found == sharedMeshes_.end()) {
+        VertexSet checked = *mesh;
+        if (checked.indices.empty()) { checked.indices.resize(checked.vertices.size()); std::iota(checked.indices.begin(), checked.indices.end(), 0); }
+        if (checked.indices.size() % 3) throw std::invalid_argument("Shared mesh indices must be triangles");
+        for (auto id : checked.indices) if (id >= checked.vertices.size()) throw std::invalid_argument("Shared mesh index out of range");
+        for (const auto& v : checked.vertices) for (float value : v.data)
+            if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite shared mesh attribute");
+        auto edges = featureVertices(checked); // Validate before allocating any GPU resource.
+        auto& entry = sharedMeshes_[mesh.get()]; entry.source = mesh;
+        uploadMesh(entry.info, checked);
+        found = sharedMeshes_.find(mesh.get());
+    }
+    auto& info = found->second.info;
+    shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+    updateModelMatrixParameter(tf_.transformation());
+    submitMesh(info.vbo);
+    if (acceptsFeatureEdges() && info.featureEdges) submitFeatureEdges(info.featureEdges);
+}
+
+void Renderer3D::setSectionSettings(const SectionSettings& settings) { section_ = validatedSectionSettings(settings); }
+
+bool Renderer3D::sectionActive() const
+{
+    return section_.enabled && (renderState_ == RenderSceneState || renderState_ == RenderPickingState
+        || renderState_ == RenderShadowState || renderState_ == RenderBoundsState
+        || renderState_ == RenderTransparentState || renderState_ == RenderOcclusionState || renderState_ == RenderEdgeState);
+}
+
+bool Renderer3D::localSectionPlane(SectionSettings& local) const
+{
+    if (!modelTransform_.matrix().allFinite()) return false;
+    Eigen::Vector3d normal(section_.normal.data());
+    if (section_.keepPositiveSide) normal = -normal;
+    const Eigen::Vector3d raw = modelTransform_.linear().transpose() * normal;
+    const double length = raw.stableNorm();
+    if (!std::isfinite(length) || length == 0 || modelTransform_.linear().determinant() == 0) return false;
+    const Eigen::Vector3d n = raw / length;
+    const double offset = (Eigen::Vector3d(section_.point.data()) - modelTransform_.translation()).dot(normal) / length;
+    const Eigen::Vector3d point = n * offset;
+    if (!point.allFinite()) return false;
+    local = section_; local.keepPositiveSide = false;
+    std::copy(n.data(), n.data() + 3, local.normal.begin());
+    std::copy(point.data(), point.data() + 3, local.point.begin());
+    return true;
+}
+
+void Renderer3D::collectMeshResources()
+{
+    for (auto it = sharedMeshes_.begin(); it != sharedMeshes_.end();) {
+        if (it->second.source.expired()) { it->second.info.vbo.release(); it = sharedMeshes_.erase(it); }
+        else ++it;
+    }
+    for (auto it = sectionMeshes_.begin(); it != sectionMeshes_.end();) {
+        if (it->source.expired()) { it->surface.vbo.release(); it->cap.vbo.release(); it = sectionMeshes_.erase(it); }
+        else ++it;
+    }
+}
+
+bool Renderer3D::submitSectionMesh(const VertexBufferObject& vbo, GLenum mode)
+{
+    SectionSettings local;
+    if (!localSectionPlane(local)) { lastSectionStatus_ = SectionStatus::InvalidTransform; return false; }
+    if (vbo.cpuMesh().vertices.empty() || !vbo.geometryToken()) return false;
+    Eigen::Vector3d n(local.normal.data()), p(local.point.data());
+    std::array<double, 4> key{{n.x(), n.y(), n.z(), n.dot(p)}};
+    auto found = std::find_if(sectionMeshes_.begin(), sectionMeshes_.end(), [&](const SectionMeshCache& entry) {
+        return entry.source.lock() == vbo.geometryToken() && entry.plane == key && entry.capEnabled == local.capEnabled;
+    });
+    if (found == sectionMeshes_.end()) {
+        auto clipped = sectionMesh(vbo.cpuMesh(), local);
+        if (sectionMeshes_.size() >= 32) {
+            sectionMeshes_.back().surface.vbo.release(); sectionMeshes_.back().cap.vbo.release(); sectionMeshes_.pop_back();
+        }
+        sectionMeshes_.emplace_front();
+        auto& entry = sectionMeshes_.front();
+        entry.source = vbo.geometryToken(); entry.plane = key; entry.capEnabled = local.capEnabled; entry.status = clipped.status;
+        if (entry.status != SectionStatus::Unchanged) {
+            uploadMesh(entry.surface, clipped.surface); uploadMesh(entry.cap, clipped.cap);
+        }
+    } else sectionMeshes_.splice(sectionMeshes_.begin(), sectionMeshes_, found);
+    const auto& entry = sectionMeshes_.front();
+    lastSectionStatus_ = entry.status;
+    if (entry.status == SectionStatus::Unchanged) return false;
+    const auto originalColor = color_;
+    sectionBypass_ = true;
+    try {
+        if (entry.surface.numIndices) {
+            Renderer3D::submitMesh(entry.surface.vbo, mode);
+            if (acceptsFeatureEdges() && entry.surface.featureEdges) submitFeatureEdges(entry.surface.featureEdges);
+        }
+        if (entry.cap.numIndices) {
+            setColor(section_.capColor[0], section_.capColor[1], section_.capColor[2], originalColor[3]);
+            shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+            Renderer3D::submitMesh(entry.cap.vbo, mode);
+            setColor(originalColor);
+            shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+        }
+    } catch (...) {
+        sectionBypass_ = false; setColor(originalColor);
+        shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+        throw;
+    }
+    sectionBypass_ = false;
+    return true;
+}
+
+std::shared_ptr<const VertexList> Renderer3D::sectionFeatureEdges(std::shared_ptr<const VertexList> vertices) const
+{
+    if (!vertices || !sectionActive() || sectionBypass_) return vertices;
+    // A tangent cut can eliminate the solid while its boundary lines still lie
+    // on the plane. Do not leave CAD outlines of the discarded solid behind.
+    if (lastSectionStatus_ == SectionStatus::Empty) return {};
+    SectionSettings local;
+    if (!localSectionPlane(local)) return vertices;
+    Eigen::Vector3d n(local.normal.data()), p(local.point.data());
+    auto clipped = std::make_shared<VertexList>();
+    clipped->reserve(vertices->size());
+    // Each expanded line is six vertices, with A in xyz and B in normal fields.
+    for (size_t i = 0; i + 5 < vertices->size(); i += 6) {
+        const auto& line = (*vertices)[i];
+        Eigen::Vector3d a(line.x, line.y, line.z), b(line.nx, line.ny, line.nz);
+        const double da = n.dot(a - p), db = n.dot(b - p);
+        if (da > 0 && db > 0) continue;
+        if (da > 0) a += (b - a) * (da / (da - db));
+        else if (db > 0) b = a + (b - a) * (da / (da - db));
+        for (size_t j = 0; j < 6; ++j) {
+            const auto& old = (*vertices)[i + j];
+            clipped->emplace_back(float(a.x()), float(a.y()), float(a.z()), float(b.x()), float(b.y()), float(b.z()), old.u, old.v);
+        }
+    }
+    return clipped;
+}
+
 void Renderer3D::drawRoundedPrimitive(const double pos[3], const double R[9], const std::array<double, 6>& key)
 {
     auto found = std::find_if(roundedMeshes_.begin(), roundedMeshes_.end(),
@@ -873,6 +1032,7 @@ void Renderer3D::updateShaderParameterLocation()
 // for GraphicsView
 void Renderer3D::beginRender(RenderState state)
 {
+    collectMeshResources();
     if (collectingBounds_) state = RenderBoundsState;
     setRenderState(state);
 

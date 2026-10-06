@@ -181,6 +181,7 @@ void StyledGraphicsView::executeRenderEvent()
         renderer->cad = cad_;
         renderer->quality = quality_;
         renderer->edgeRevision = edgeRevision_;
+        renderer->setSectionSettings(section_);
     }
     GraphicsView::executeRenderEvent();
     std::lock_guard<std::mutex> lock(settingsMutex_);
@@ -225,6 +226,20 @@ void StyledGraphicsView::invalidateEdgeCache()
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     ++edgeRevision_;
+}
+
+void StyledGraphicsView::setSectionSettings(const SectionSettings& settings)
+{
+    auto checked = validatedSectionSettings(settings);
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    section_ = checked;
+    ++edgeRevision_;
+}
+
+StyledGraphicsView::SectionSettings StyledGraphicsView::sectionSettings() const
+{
+    std::lock_guard<std::mutex> lock(settingsMutex_);
+    return section_;
 }
 
 StyledGraphicsView::RenderStatistics StyledGraphicsView::renderStatistics() const

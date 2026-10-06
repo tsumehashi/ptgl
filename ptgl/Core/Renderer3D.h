@@ -3,6 +3,7 @@
 
 #include <array>
 #include <list>
+#include "SectionSettings.h"
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -264,7 +265,13 @@ public:
 
     // Optional preprocessed/explicit edges are drawn in CAD mode only.
     void drawMesh(const VertexSet& mesh);
+    // Immutable CPU mesh; upload once per renderer, release after its owners let go.
+    void drawSharedMesh(const std::shared_ptr<const VertexSet>& mesh);
     void registerMesh(const std::string& name, const VertexSet& mesh, bool override = false);
+    // StyledGraphicsView supplies one validated snapshot for all scene passes.
+    void setSectionSettings(const SectionSettings& settings);
+    const SectionSettings& sectionSettings() const { return section_; }
+    SectionStatus lastSectionStatus() const { return lastSectionStatus_; }
 
     void drawVertex(const VertexList& vertices, const IndexList& indices);
     void drawVertex(const double pos[3], const double R[9], const VertexList& vertices, const IndexList& indices);
@@ -355,8 +362,10 @@ protected:
 
     GraphicsView* graphicsView_ = nullptr;
     virtual void submitMesh(const VertexBufferObject& vbo, GLenum mode = GL_TRIANGLES);
+    virtual void meshSubmitted(const VertexBufferObject&, GLenum) {}
     virtual bool acceptsFeatureEdges() const { return false; }
     virtual void submitFeatureEdges(std::shared_ptr<const VertexList>) {}
+    std::shared_ptr<const VertexList> sectionFeatureEdges(std::shared_ptr<const VertexList> vertices) const;
     bool collectingBounds_ = false;
     Eigen::AlignedBox3d sceneBounds_;
     Eigen::Affine3d modelTransform_ = Eigen::Affine3d::Identity();
@@ -415,6 +424,24 @@ protected:
     };
     std::list<RoundedMesh> roundedMeshes_;
     void drawRoundedPrimitive(const double pos[3], const double R[9], const std::array<double, 6>& key);
+    struct SharedMesh { std::weak_ptr<const VertexSet> source; VBOInfo info; };
+    std::unordered_map<const VertexSet*, SharedMesh> sharedMeshes_;
+    struct SectionMeshCache {
+        std::weak_ptr<const int> source;
+        std::array<double, 4> plane;
+        bool capEnabled = true;
+        VBOInfo surface, cap;
+        SectionStatus status = SectionStatus::Disabled;
+    };
+    std::list<SectionMeshCache> sectionMeshes_;
+    SectionSettings section_;
+    SectionStatus lastSectionStatus_ = SectionStatus::Disabled;
+    bool sectionBypass_ = false;
+    bool sectionActive() const;
+    bool localSectionPlane(SectionSettings& local) const;
+    bool submitSectionMesh(const VertexBufferObject& vbo, GLenum mode);
+    void collectMeshResources();
+    static void uploadMesh(VBOInfo& info, const VertexSet& mesh);
 
     // attribute/uniform location
     GLint attrVertexLocation_ = -1;

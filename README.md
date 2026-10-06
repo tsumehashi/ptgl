@@ -6,7 +6,7 @@ ptgl is a C++ graphics library for prototyping.
 ## Installation
 ### Requirements
 * Ubuntu 18.04
-* C++17  
+* C++17 compiler and standard library with `std::filesystem` support (GCC 9+ on Ubuntu)
 * CMake 3.10 or later
 
 ### Install dependencies
@@ -160,14 +160,19 @@ The demo uses the shared `ObjectScene` editor and `GraphicsItem::setOpacity()` A
 automatically follows moved and rotated objects.
 Press `1` to add a sphere, `2` to add a rounded box, `3` to add a cylinder,
 or `4` to add a cube with sharp corners (side length 1.5). `5` adds a rounded
-cylinder and `6` adds a rounded cone. The rounded objects use the standard
-`drawRoundedBox()`, `drawRoundedCylinder()` and `drawRoundedCone()` APIs.
+cylinder and `6` adds a rounded cone. The objects use `ObjectScene::addPrimitive()`
+with inspectable shape parameters and reusable meshes.
 New objects use an unoccupied grid position near the scene origin and are selected
 automatically, ready to move with the handle. `Delete` removes the selected object
 and clears its handle; without a selection it does nothing. Holding an add/delete
 key does not repeat the operation. Adding or deleting during a handle drag ends
 that gesture. The HUD shows the current object count. These controls work in all
 three rendering styles, and scene changes refresh shadows, picking and cached edges.
+Drop an STL or OBJ file onto the window to add and select a mesh; the camera fits
+the imported object. Failed imports leave the scene intact and report the error
+in the HUD. X toggles a horizontal section, F toggles its cap, K reverses the
+retained side, and PageUp/PageDown moves the plane by 0.1 along world Z. The HUD
+also shows the selected mesh's section status, including cap failures.
 If GLFW is not discovered automatically, set `GLFW_INCLUDE_DIR` and
 `GLFW_LIBRARY`. Windows shared builds also need the ptgl, GLEW and GLFW DLL
 directories on `PATH`. The example selects desktop OpenGL through the existing
@@ -222,6 +227,127 @@ the view. Render callbacks should only draw: change the object list from input o
 frame callbacks. `ObjectScene` belongs to its view; retained objects are detached
 when the view is destroyed. Shape choices, spawn placement, shortcut keys and HUD
 text remain application policy; see `examples/PlasticDemo/main.cpp` for an example.
+
+### Objects with shape and material properties
+
+`ObjectScene` also creates objects whose geometry and appearance can be inspected
+and edited without replacing a draw callback:
+
+```cpp
+auto& scene = view.objectScene();
+auto box = scene.addPrimitive("Housing",
+    ptgl::RoundedBoxShape{{2.0, 1.2, 1.0}, 0.12}, {0, 0, 0.5});
+box->setColor(0.16, 0.52, 0.83); // sRGB components in [0,1]
+box->setMaterial({0.4, 0.04});   // roughness, dielectric reflectance
+box->setOpacity(0.8);
+
+auto shape = std::get<ptgl::RoundedBoxShape>(*box->shape());
+shape.sides[0] = 2.5;
+box->setShape(shape); // Keeps the pose, color, material and selection.
+auto worldBounds = box->worldBounds();
+box->clearMaterial(); // Inherit the current/view material again.
+```
+
+`PrimitiveShape` is a variant of seven types defined in
+`ptgl/Core/PrimitiveShape.h`: `BoxShape`, `SphereShape`, `CylinderShape`,
+`ConeShape`, `RoundedBoxShape`, `RoundedCylinderShape` and `RoundedConeShape`.
+Dimensions are full side lengths or full Z length; radii and segment counts follow
+the rounded primitive rules below. Each type is centered at the local origin.
+Their meshes stay the same across Legacy, Plastic and CAD styles.
+
+`shape()` returns an optional shape description; imported/custom meshes have no
+primitive description. `mesh()` exposes a shared, immutable CPU mesh for either
+kind of geometry. `localBounds()` and `worldBounds()` describe the full geometry,
+before section clipping; callback-only objects have empty bounds. `color()` and
+`material()` expose the stored appearance, while `transform()` and the existing
+opacity API remain available. Object materials require finite roughness in
+`[0.12,1]` and reflectance in `[0,1]`; invalid shape/color/material input throws.
+
+`setShape()` and `setMesh()` replace geometry only after successful validation.
+They update bounds and invalidate CAD edges automatically. `setDrawFunction()`
+switches back to callback rendering and clears the stored geometry/bounds. A
+callback may override an object's color or material with renderer calls.
+
+### Imported and custom mesh objects
+
+```cpp
+auto imported = scene.loadMesh("Part", "models/part.stl");
+imported->setColor(0.7, 0.75, 0.8);
+imported->transform()->setPosition({2, 0, 1});
+scene.selectObject(imported);
+
+ptgl::VertexSet geometry = ptgl::generatePrimitiveMesh(ptgl::ConeShape{2.0, 0.8});
+ptgl::MeshProcessingSettings processing;
+processing.creaseAngle = 40;
+auto custom = scene.addMesh("Custom", geometry, processing);
+// custom->setMesh(updatedGeometry, processing);
+```
+
+`loadMesh()` accepts ASCII/binary STL and OBJ with case-insensitive extensions
+and UTF-8 paths. OBJ faces are triangulated and groups are combined into one
+object; textures, material libraries and per-face colors are not imported. Units
+and coordinates are preserved. Binary STL counts are checked against the file
+length before allocating vertices; malformed/truncated data is rejected.
+
+Both `addMesh()` and `loadMesh()` use `prepareCadMesh()` to remove degenerate
+triangles, prepare normals and extract feature edges. They accept indexed
+triangles or triangle soup and copy the input into immutable storage. Invalid,
+empty or failed imports throw an exception before adding anything to the scene.
+Mesh replacement also preserves the previous geometry on failure. Objects use
+the existing selection, transform handle, transparency, shadow and CAD paths.
+
+For direct rendering, `Renderer3D::drawSharedMesh()` accepts a
+`std::shared_ptr<const VertexSet>` and uploads it once per renderer. Reusing a
+mesh, moving its object or changing its color does not upload it again. Cached
+buffers are reclaimed at a render-frame boundary after the last CPU owner is
+released, or when the renderer is finalized.
+
+### Section planes and caps
+
+`StyledGraphicsView` supports one world-space section plane in all three styles:
+
+```cpp
+ptgl::SectionSettings section;
+section.enabled = true;
+section.point = {0, 0, 0.8};
+section.normal = {0, 0, 1};
+section.keepPositiveSide = false; // Retain z <= 0.8 in this example.
+section.capEnabled = true;
+section.capColor = {1.0, 0.65, 0.2};
+view.setSectionSettings(section);
+// section.enabled = false; view.setSectionSettings(section);
+```
+
+The plane normal can point in any direction and is normalized on assignment.
+Nonfinite values, a zero normal and cap colors outside `[0,1]` are rejected.
+`sectionSettings()` retrieves the current settings; changes apply at the next
+frame boundary. The renderer also exposes the same setters for direct use.
+
+Clipping affects standard CPU-backed triangle drawing, including primitive draw
+callbacks and mesh objects. Display, picking, shadows, transparency and CAD edges
+use the same clipped surface and cap; transform handles, overlays and line
+primitives remain intact. Original mesh data and object bounds are preserved.
+Raw OpenGL buffer changes outside the library's mesh upload API are not tracked.
+
+Caps support concave contours, holes and disconnected sections. They require a
+closed, consistently wound manifold source mesh. Open/nonmanifold meshes or
+invalid contours still show the clipped surface, with no cap. Inspect the most
+recent mesh draw using `SceneObject::sectionStatus()` or
+`Renderer3D::lastSectionStatus()`; `sectionStatusMessage()` provides a readable
+description. Results include `Disabled`, `Unchanged`, `Empty`, `Clipped`, `Capped`,
+`OpenMesh`, `InvalidContour` and `InvalidTransform`. A singular/nonfinite object
+transform reports `InvalidTransform` and leaves that draw uncut.
+
+The CPU-only `sectionMesh()` function in `ptgl/Util/MeshSection.h` returns separate
+surface/cap meshes and a status without modifying its input. Its plane uses the
+input mesh's coordinates. Clipping uses a tolerance relative to mesh size;
+features near that tolerance may merge or fail cap generation. This provides
+mesh sections, not exact CAD solid operations.
+
+Mesh buffers retain CPU triangle data for clipping, increasing memory use.
+The renderer caches up to 32 mesh/plane combinations; changing a plane or moving
+an object can require CPU clipping again. Cost grows with mesh complexity, so
+large imported meshes may need simplification for interactive plane movement.
 
 ### Rounded primitives
 

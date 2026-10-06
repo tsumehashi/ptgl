@@ -18,10 +18,15 @@ void VertexBufferObject::release()
     numVertices_ = numIndices_ = 0;
     vertexVBOBufferSize_ = indexVBOBufferSize_ = 0;
     bounds_.setEmpty();
+    cpuMesh_ = {};
+    geometryToken_.reset();
 }
 
 void VertexBufferObject::updateBounds(const Vertex* vertices, size_t size)
 {
+    geometryToken_ = std::make_shared<const int>(0);
+    if (vertices && size) cpuMesh_.vertices.assign(vertices, vertices + size);
+    else cpuMesh_.vertices.clear();
     bounds_.setEmpty();
     if (!vertices) return; // Allocation without initial vertex data.
     for (size_t i = 0; i < size; ++i) {
@@ -122,6 +127,9 @@ bool VertexBufferObject::loadVertices(const Vertex* vertices, size_t size, GLenu
 
 bool VertexBufferObject::loadIndices(const GLuint* indices, size_t size, GLenum usage)
 {
+    geometryToken_ = std::make_shared<const int>(0);
+    if (indices && size) cpuMesh_.indices.assign(indices, indices + size);
+    else cpuMesh_.indices.clear();
     indexUsage_ = usage;
     numIndices_ = size;
     indexVBOBufferSize_ = sizeof(GLuint) * size;
@@ -177,6 +185,9 @@ bool VertexBufferObject::updateVertices(const Vertex* vertices, size_t size)
 
 bool VertexBufferObject::updateIndices(const GLuint* indices, size_t size)
 {
+    geometryToken_ = std::make_shared<const int>(0);
+    if (indices && size) cpuMesh_.indices.assign(indices, indices + size);
+    else cpuMesh_.indices.clear();
     numIndices_ = size;
 
     // check size

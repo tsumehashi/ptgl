@@ -1,5 +1,7 @@
 #include "OBJLoader.h"
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include "ptgl/Util/Intersection.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -23,7 +25,13 @@ VertexListPtr OBJLoader::loadVertex(const std::string& filepath)
     std::vector<tinyobj::material_t> materials;
 
     std::string err;
-    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, filepath.c_str());    // triangulate = true
+    std::ifstream input(std::filesystem::u8path(filepath));
+    if (!input) {
+        std::cerr << "OBJLoader: cannot open " << filepath << std::endl;
+        return nullptr;
+    }
+    // This API returns geometry/UVs only; material libraries are not imported.
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, &input, nullptr, true);
 
     if (!err.empty()) { // `err` may contain warning message.
         std::cerr << err << std::endl;

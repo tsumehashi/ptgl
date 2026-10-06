@@ -284,16 +284,15 @@ class StyledRenderer3D final : public SceneStyleRenderer
     void submitFeatureEdges(std::shared_ptr<const VertexList> vertices) override
     {
         if (lightEffectRate_ > 0 && color_[3] > 0.001)
-            cadRenderer_.addFeatures(std::move(vertices), modelTransform_.matrix());
+            cadRenderer_.addFeatures(sectionFeatureEdges(std::move(vertices)), modelTransform_.matrix());
     }
-    void submitMesh(const VertexBufferObject &vbo, GLenum mode = GL_TRIANGLES) override
+    void meshSubmitted(const VertexBufferObject &vbo, GLenum mode) override
     {
         if (edgePass_) {
             ++statistics.edgeDrawCalls;
             if (mode == GL_TRIANGLES)
                 statistics.edgeTriangles += vbo.numIndices() / 3;
         }
-        Renderer3D::submitMesh(vbo, mode);
     }
     void beginRender(RenderState state) override
     {

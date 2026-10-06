@@ -88,6 +88,10 @@ public:
     void notifySceneChanged() override { invalidateEdgeCache(); }
     // Last completed frame; GPU samples can originate from an earlier frame.
     RenderStatistics renderStatistics() const;
+    using SectionSettings = ptgl::SectionSettings;
+    // One world-space plane; affects triangle meshes in all three styles, not overlays.
+    void setSectionSettings(const SectionSettings& settings);
+    SectionSettings sectionSettings() const;
 
     // False until the GL context has successfully compiled the plastic shader.
     // A compilation failure is logged and rendering falls back to Legacy.
@@ -111,6 +115,7 @@ private:
     CadSettings cad_;
     RenderQualitySettings quality_;
     RenderStatistics statistics_;
+    SectionSettings section_;
     std::uint64_t edgeRevision_ = 0;
 };
 

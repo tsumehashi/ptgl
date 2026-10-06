@@ -65,9 +65,14 @@ public:
     GLuint numVertices() const { return numVertices_; }
     GLuint numIndices() const { return numIndices_; }
     const Eigen::AlignedBox3d& bounds() const { return bounds_; }
+    // CPU geometry retained for view sections; static raw-GL updates bypass this.
+    const VertexSet& cpuMesh() const { return cpuMesh_; }
+    const std::shared_ptr<const int>& geometryToken() const { return geometryToken_; }
 
 private:
     void updateBounds(const Vertex* vertices, size_t size);
+    VertexSet cpuMesh_;
+    std::shared_ptr<const int> geometryToken_;
     Eigen::AlignedBox3d bounds_;
     GLuint vertexVBO_ = 0;
     GLuint indexVBO_ = 0;
