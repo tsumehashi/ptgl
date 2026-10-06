@@ -156,6 +156,14 @@ The selected object is shown at 50% opacity in all three styles and returns to o
 when deselected. Selection transparency preserves its picking geometry and shadows.
 The demo uses the shared `GraphicsItem::setOpacity()` API. Its shadow volume
 automatically follows moved and rotated objects.
+Press `1` to add a sphere, `2` to add a rounded box, `3` to add a cylinder,
+or `4` to add a cube with sharp corners (side length 1.5).
+New objects use an unoccupied grid position near the scene origin and are selected
+automatically, ready to move with the handle. `Delete` removes the selected object
+and clears its handle; without a selection it does nothing. Holding an add/delete
+key does not repeat the operation. Adding or deleting during a handle drag ends
+that gesture. The HUD shows the current object count. These controls work in all
+three rendering styles, and scene changes refresh shadows, picking and cached edges.
 If GLFW is not discovered automatically, set `GLFW_INCLUDE_DIR` and
 `GLFW_LIBRARY`. Windows shared builds also need the ptgl, GLEW and GLFW DLL
 directories on `PATH`. The example selects desktop OpenGL through the existing

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -12,9 +13,23 @@
 #include "ptgl/Handle/TransformHandle.h"
 #include "ptgl/Util/MeshProcessing.h"
 
+class DemoView : public ptgl::QuickPlasticGraphicsView {
+public:
+    using ptgl::QuickPlasticGraphicsView::QuickPlasticGraphicsView;
+
+    // End the current handle gesture before deleting or selecting another object.
+    // Subsequent mouse moves while the button is held must not move the new selection.
+    void finishObjectDrag() {
+        ptgl::MouseEvent release(this);
+        release.setReleaseEvent(getMouseEvent().x(), getMouseEvent().y(),
+                                ptgl::MouseEvent::MouseButton::LeftButton);
+        executeGraphicsItemMouseReleaseEvent(&release);
+    }
+};
+
 int main()
 {
-    ptgl::QuickPlasticGraphicsView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
+    DemoView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
     view.setWindowTitle("PlasticDemo - Space: Plastic / CAD / Legacy");
     view.setWindowSize(1100, 720);
     view.setFrameRate(60);
@@ -82,6 +97,8 @@ int main()
     struct DemoObject {
         ptgl::GraphicsItemPtr item;
         ptgl::TransformPtr transform;
+        Eigen::Vector3d lastPosition;
+        Eigen::Matrix3d lastRotation;
     };
     std::vector<DemoObject> objects;
     ptgl::GraphicsItemPtr selectedObject;
@@ -98,33 +115,39 @@ int main()
             draw(r);
             r->popMatrix();
         });
-        objects.push_back({item, transform});
+        objects.push_back({item, transform, position, transform->rotation()});
         view.addGraphicsItem(item);
+        view.invalidateEdgeCache();
     };
-    addObject("Sphere", {0, -2.1, 0.8}, [](ptgl::Renderer3D* r) {
+    const std::array<std::string, 4> shapeNames{{"Sphere", "Rounded box", "Cylinder", "Cube"}};
+    constexpr std::array<double, 4> shapeHeights{{0.8, 0.75, 0.8, 0.75}};
+    const std::array<std::function<void(ptgl::Renderer3D*)>, 4> drawShapes{{[](ptgl::Renderer3D* r) {
         r->setColor(0.86, 0.24, 0.13);
         r->drawSphere(r->p0(), r->R0(), 0.8);
-    });
-    addObject("Rounded box", {0, 0, 0.75}, [&](ptgl::Renderer3D* r) {
+    }, [&](ptgl::Renderer3D* r) {
         r->setColor(0.16, 0.52, 0.83);
         if (!r->isRegisteredVertices("roundedBox")) r->registerMesh("roundedBox", roundedBox);
         r->drawRegisteredVertices("roundedBox");
-    });
-    addObject("Cylinder", {0, 2.1, 0.8}, [](ptgl::Renderer3D* r) {
+    }, [](ptgl::Renderer3D* r) {
         r->setColor(0.95, 0.64, 0.12);
         r->drawCylinder(r->p0(), r->R0(), 1.6, 0.72);
-    });
+    }, [](ptgl::Renderer3D* r) {
+        r->setColor(0.30, 0.68, 0.37);
+        r->drawBox(r->p0(), r->R0(), {1.5, 1.5, 1.5});
+    }}};
+    for (size_t shape = 0; shape < 3; ++shape)
+        addObject(shapeNames[shape], {0, (double(shape) - 1) * 2.1, shapeHeights[shape]}, drawShapes[shape]);
+    std::array<size_t, 4> shapeSerials{{1, 1, 1, 0}};
 
     // Handle changes occur during event processing; invalidate before this frame
     // renders. Selection fading keeps the same nearest surfaces and needs no reset.
-    std::vector<Eigen::Vector3d> lastPositions(objects.size(),Eigen::Vector3d::Zero());
-    std::vector<Eigen::Matrix3d> lastRotations(objects.size(),Eigen::Matrix3d::Identity());
     view.setPostEventProcessFunction([&] {
         bool changed=false;
-        for(size_t i=0;i<objects.size();++i) {
-            const auto& t=objects[i].transform;
-            if(lastPositions[i]!=t->position() || lastRotations[i]!=t->rotation()) changed=true;
-            lastPositions[i]=t->position(); lastRotations[i]=t->rotation();
+        for (auto& object : objects) {
+            const auto& t = object.transform;
+            if (object.lastPosition != t->position() || object.lastRotation != t->rotation()) changed = true;
+            object.lastPosition = t->position();
+            object.lastRotation = t->rotation();
         }
         if(changed) view.invalidateEdgeCache();
     });
@@ -132,30 +155,68 @@ int main()
     auto handle = std::make_shared<ptgl::handle::TransformHandle>();
     handle->setEnabled(false);
     view.addGraphicsItem(handle);
+    const auto idleTransform = handle->transform();
+    auto selectObject = [&](const DemoObject* object) {
+        view.finishObjectDrag();
+        if (selectedObject) selectedObject->setOpacity(1.0);
+        selectedObject = object ? object->item : nullptr;
+        handle->setEnabled(bool(object));
+        handle->setTransform(object ? object->transform : idleTransform);
+        if (selectedObject) selectedObject->setOpacity(selectedOpacity);
+    };
+    auto addShape = [&](size_t shape) {
+        // Search outward for a free grid position, reusing gaps left by deletions.
+        // Existing transforms are checked because objects may have been dragged.
+        for (int ring = 0; ; ++ring) {
+            for (int x = ring; x >= -ring; --x) for (int y = -ring; y <= ring; ++y) {
+                if (std::max(std::abs(x), std::abs(y)) != ring) continue;
+                Eigen::Vector3d position(x * 2.1, y * 2.1, shapeHeights[shape]);
+                bool occupied = std::any_of(objects.begin(), objects.end(), [&](const DemoObject& object) {
+                    return (object.transform->position() - position).head<2>().norm() < 2.0;
+                });
+                if (occupied) continue;
+                addObject(shapeNames[shape] + " " + std::to_string(++shapeSerials[shape]), position, drawShapes[shape]);
+                selectObject(&objects.back());
+                return;
+            }
+        }
+    };
+    auto deleteSelectedObject = [&] {
+        auto found = std::find_if(objects.begin(), objects.end(), [&](const DemoObject& object) {
+            return object.item == selectedObject;
+        });
+        if (found == objects.end()) return;
+        selectObject(nullptr);
+        view.removeGraphicsItem(found->item);
+        objects.erase(found);
+        view.invalidateEdgeCache();
+    };
     view.setPickingUpEventFunction([&](ptgl::PickingEvent* e) {
         auto picked = e->pickedGraphicsItem();
         // Handle parts are children: clicking one must preserve the selection.
         for (auto item = picked.get(); item; item = item->parentItem()) {
             if (item == handle.get()) return;
         }
-        if (selectedObject) selectedObject->setOpacity(1.0);
         for (const auto& object : objects) {
             if (object.item == picked) {
-                selectedObject = object.item;
-                selectedObject->setOpacity(selectedOpacity);
-                handle->setTransform(object.transform);
-                handle->setEnabled(true);
+                selectObject(&object);
                 return;
             }
         }
-        selectedObject.reset();
-        handle->setEnabled(false);
+        selectObject(nullptr);
     });
 
     view.setKeyPressEventFunction([&](ptgl::KeyEvent* e) {
         if (e->keyAction() == ptgl::KeyEvent::KeyAction::KeyRelease) return;
         using Style = ptgl::PlasticGraphicsView::RenderStyle;
-        if (e->key() == ptgl::Key::Key_Space && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
+        if (e->key() == ptgl::Key::Key_1 || e->key() == ptgl::Key::Key_2 ||
+            e->key() == ptgl::Key::Key_3 || e->key() == ptgl::Key::Key_4) {
+            if (e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress)
+                addShape(e->key() == ptgl::Key::Key_1 ? 0 : e->key() == ptgl::Key::Key_2 ? 1 :
+                         e->key() == ptgl::Key::Key_3 ? 2 : 3);
+        } else if (e->key() == ptgl::Key::Key_Delete) {
+            if (e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) deleteSelectedObject();
+        } else if (e->key() == ptgl::Key::Key_Space && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
             view.setRenderStyle(view.renderStyle() == Style::Plastic ? Style::CAD
                               : view.renderStyle() == Style::CAD ? Style::Legacy : Style::Plastic);
         } else if (e->key() == ptgl::Key::Key_Q && e->keyAction() == ptgl::KeyEvent::KeyAction::KeyPress) {
@@ -236,6 +297,8 @@ int main()
                 + " | captures " + (stats.edgeCaptureReused ? "reused" : std::to_string(stats.edgeDrawCalls)+" draws"));
         } else r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none"))
             + (cad ? " | Q: quality  P: timings  C: cache  , / .: brightness" : ""));
+        r->drawText(20, 155, "1: add sphere   2: add rounded box   3: add cylinder   4: add cube   Delete: remove selected   Objects: "
+            + std::to_string(objects.size()));
     });
 
     view.initialize();
