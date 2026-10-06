@@ -73,17 +73,19 @@ int main(int argc, char* argv[])
 }
 ~~~
 
-## Plastic rendering
+## Rendering styles
 
-Use `QuickPlasticGraphicsView` instead of `QuickGraphicsView` with the same
+Use `QuickStyledGraphicsView` instead of `QuickGraphicsView` with the same
 driver and render callbacks. For subclass-based applications, derive from
-`PlasticGraphicsView` instead of `GraphicsView`.
+`StyledGraphicsView` instead of `GraphicsView`, including
+`ptgl/Core/StyledGraphicsView.h`. These views support Plastic (the default), CAD
+and Legacy rendering. `QuickStyledGraphicsView` is defined in `QuickGraphicsView.h`.
 
 ```cpp
 #include "ptgl/Core/QuickGraphicsView.h"
 #include "ptgl/Driver/GLFWGraphicsDriver.h"
 
-ptgl::QuickPlasticGraphicsView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
+ptgl::QuickStyledGraphicsView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
 view.setDefaultMaterial({0.35, 0.04}); // roughness, dielectric reflectance
 view.setRenderSceneFunction([](ptgl::Renderer3D* r) {
     r->setColor(0.8, 0.3, 0.2);
@@ -93,8 +95,8 @@ view.setRenderSceneFunction([](ptgl::Renderer3D* r) {
     r->drawCylinder({0, 3, 0}, r->R0(), 2.0, 0.8);
 });
 // May also be called while running; applies at the next frame boundary.
-view.setRenderStyle(ptgl::PlasticGraphicsView::RenderStyle::Legacy);
-view.setRenderStyle(ptgl::PlasticGraphicsView::RenderStyle::Plastic);
+view.setRenderStyle(ptgl::StyledGraphicsView::RenderStyle::Legacy);
+view.setRenderStyle(ptgl::StyledGraphicsView::RenderStyle::Plastic);
 ```
 
 The plastic style uses per-fragment GGX specular lighting, two directional
@@ -154,10 +156,12 @@ clears the selection. Object transforms persist when switching shading styles,
 and shadows follow the transformed objects in Plastic and CAD modes.
 The selected object is shown at 50% opacity in all three styles and returns to opaque
 when deselected. Selection transparency preserves its picking geometry and shadows.
-The demo uses the shared `GraphicsItem::setOpacity()` API. Its shadow volume
+The demo uses the shared `ObjectScene` editor and `GraphicsItem::setOpacity()` API. Its shadow volume
 automatically follows moved and rotated objects.
 Press `1` to add a sphere, `2` to add a rounded box, `3` to add a cylinder,
-or `4` to add a cube with sharp corners (side length 1.5).
+or `4` to add a cube with sharp corners (side length 1.5). `5` adds a rounded
+cylinder and `6` adds a rounded cone. The rounded objects use the standard
+`drawRoundedBox()`, `drawRoundedCylinder()` and `drawRoundedCone()` APIs.
 New objects use an unoccupied grid position near the scene origin and are selected
 automatically, ready to move with the handle. `Delete` removes the selected object
 and clears its handle; without a selection it does nothing. Holding an add/delete
@@ -168,6 +172,108 @@ If GLFW is not discovered automatically, set `GLFW_INCLUDE_DIR` and
 `GLFW_LIBRARY`. Windows shared builds also need the ptgl, GLEW and GLFW DLL
 directories on `PATH`. The example selects desktop OpenGL through the existing
 `PTGL_DISABLE_GLES` driver option.
+
+### Object selection and editing
+
+`GraphicsView::objectScene()` enables the reusable object editor on any ordinary
+or Plastic/CAD view. It owns a `TransformHandle` and the objects added through it;
+existing view callbacks remain available. Include `ptgl/Core/ObjectScene.h`:
+
+```cpp
+auto& scene = view.objectScene();
+auto box = scene.addObject("Rounded box", {0, 0, 0.75}, [](ptgl::Renderer3D* r) {
+    r->setColor(0.16, 0.52, 0.83);
+    r->drawRoundedBox(r->p0(), r->R0(), {1.5, 1.5, 1.5}, 0.18);
+});
+scene.selectObject(box); // Optional: clicking also selects automatically.
+scene.setSelectionOpacity(0.5); // Multiply the original opacity while selected.
+scene.transformHandle()->setEnableRotate(false); // Translation only.
+box->transform()->setPosition({1, 0, 0.75});
+// scene.removeSelectedObject();
+// scene.clear();
+```
+
+Draw callbacks use local coordinates. The object's transform applies equally to
+normal rendering, picking, shadows and CAD edges. `objects()` and `selectedObject()`
+expose the current state. Click a handle to manipulate the current object; clicking
+the background or an unmanaged item clears selection. Selection runs before the
+view's picking callback. `selectObject(nullptr)` clears it programmatically;
+`setEditingEnabled(false)` clears it and stops automatic selection.
+
+Selection uses half the object's original opacity by default and restores the
+original value on deselection or removal. `setSelectionOpacity(1)` disables fading.
+Changing or removing the selection ends any active handle gesture, so a held mouse
+button cannot move a newly selected object. Translation/rotation enable settings
+survive selection changes. Direct `view.removeGraphicsItem(object)` also clears
+the editor's selection and object list. `removeObject()` and `removeSelectedObject()`
+return false when there is nothing to remove. Hiding/disabling a selected object,
+or making it unpickable, clears selection before the next rendered frame.
+
+Adding/removing items, visibility/enabled state, double-sided state and changes
+to/from zero opacity automatically invalidate cached CAD edges. Managed object
+positions and rotations (including changes through a shared `Transform`) are
+checked before each frame's scene passes. Replacing a draw callback through
+`setDrawFunction()` also invalidates edges; call `notifyGeometryChanged()` when
+changing geometry captured by that callback. Other custom rendering can call
+`view.notifySceneChanged()` or `invalidateEdgeCache()` on Plastic views.
+
+Object editing and item mutations run on the view/event thread, or before starting
+the view. Render callbacks should only draw: change the object list from input or
+frame callbacks. `ObjectScene` belongs to its view; retained objects are detached
+when the view is destroyed. Shape choices, spawn placement, shortcut keys and HUD
+text remain application policy; see `examples/PlasticDemo/main.cpp` for an example.
+
+### Rounded primitives
+
+`Renderer3D` supports rounded solids directly in Legacy, Plastic and CAD modes.
+Position, rotation and the transform stack work like `drawBox()`/`drawCylinder()`.
+Rounding is part of the geometry, so picking, shadows and transparent selection
+all use the same surface.
+
+```cpp
+r->drawRoundedBox({0, 0, 0.75}, r->R0(), {1.5, 1.5, 1.5}, 0.18);
+r->drawRoundedBox({0, 2, 0.5}, r->R0(), {2.0, 1.2, 1.0}, 0.12);
+r->drawRoundedCylinder({2, 0, 0.8}, r->R0(), 1.6, 0.72, 0.18);
+r->drawRoundedCone({2, 2, 0.9}, r->R0(), 1.8, 0.82, 0.14);
+// Optional final argument controls tessellation (default 6, range [1,64]):
+r->drawRoundedCylinder({-2, 0, 0.8}, r->R0(), 1.6, 0.72, 0.18, 12);
+```
+
+| Method | Size parameters | Rounded parts | Fillet-radius range |
+| --- | --- | --- | --- |
+| `drawRoundedBox(pos, R, sides, fillet, segments)` | Full XYZ side lengths | All twelve edges and eight corners | `[0, min(sides)/2]` |
+| `drawRoundedCylinder(pos, R, length, radius, fillet, segments)` | Full Z length and outer radius | Top and bottom rims | `[0, min(radius, length/2)]` |
+| `drawRoundedCone(pos, R, length, radius, fillet, segments)` | Sharp cone's Z length and base radius | Base rim and tip | `[0, radius*length/(hypot(length,radius)+radius)]` |
+
+Dimensions must be positive, finite and representable as floats. Invalid dimensions,
+fillet radii or segment counts throw `std::invalid_argument` on drawing/generation.
+Zero fillet gives sharp edges. All shapes are closed, centered on the Z axis; the
+box and cylinder preserve their outer dimensions. The cone is rounded **inside its
+original sharp envelope**, with its base at `-length/2`: its base perimeter contracts
+and its rounded tip lies below `+length/2`. At the maximum cone fillet, the result
+is its inscribed sphere. The cylinder becomes a capsule when the fillet reaches
+its radius, and a sphere when its full length also equals its diameter.
+
+`segments` controls fillet detail. Revolution shapes use at least 64 circumferential
+segments, increasing to `8 * segments` for higher settings. Smooth analytic normals
+are included, along with tangent-boundary metadata for CAD edges. These edges obey
+the view's edge enable/color/width settings; ordinary `drawVertex()` callers may
+ignore metadata as before.
+
+The renderer caches the 16 most recently used rounded geometry parameter sets in
+GPU buffers, shared across frames and render passes. Position/rotation/color do
+not create separate meshes. Eviction and view finalization release the buffers.
+For many different shapes, applications can generate and register meshes explicitly
+using `PrimitiveShapeVertex::generateRoundedBox()`, `generateRoundedCylinder()` or
+`generateRoundedCone()`, then `registerMesh()`/`drawRegisteredVertices()`. Call
+`invalidateEdgeCache()` after changing geometry if static edge caching is enabled.
+
+`Render3DItem` provides the same three methods with pointer-based position/rotation
+arguments, including optional `segments`. Recording serialization retains these
+parameters and replays through the standard APIs; geometry validation occurs during
+playback. Existing command IDs are preserved. Older library versions cannot read
+the newly appended rounded-shape commands. Rebuild consumers after updating the
+library because the renderer's class layout changed.
 
 ### Shadow settings
 
@@ -279,7 +385,7 @@ selection fading preserve an object's shadow. Use `setCastsShadow(false)` for
 physically transparent surfaces. Selection fading does not simulate refraction
 or colored light transmission.
 
-Both `GraphicsView` and `PlasticGraphicsView` use
+Both `GraphicsView` and `StyledGraphicsView` use
 [weighted blended order-independent transparency](https://jcgt.org/published/0002/02/09/)
 for items whose opacity is below 1. This handles overlapping/intersecting meshes
 without sorting triangles, with depth testing against opaque geometry. Blending
@@ -299,7 +405,7 @@ destruction. Overlays, text and picking remain separate from composition.
 ### CAD edge rendering
 
 ```cpp
-view.setRenderStyle(ptgl::PlasticGraphicsView::RenderStyle::CAD);
+view.setRenderStyle(ptgl::StyledGraphicsView::RenderStyle::CAD);
 auto edges = view.edgeSettings();
 edges.enabled = true;
 edges.color = {0.08, 0.10, 0.13};
@@ -378,8 +484,8 @@ screen-space edge detection; use `drawMesh()`/`registerMesh()` to include metada
 `registerMesh(name, mesh, true)` replaces both geometry and its edge metadata.
 
 Screen-space detection alone cannot recover coplanar part boundaries or tangent
-fillet boundaries. Import face/edge metadata for those boundaries; the demo's
-rounded box supplies explicit tangent seams. No CAD topology is inferred from
+fillet boundaries. Import face/edge metadata for those boundaries; the built-in
+rounded primitives supply their tangent seams automatically. No CAD topology is inferred from
 triangle normals beyond geometric creases. Tiny details remain resolution-limited.
 
 #### Quality, cache and measurements
@@ -390,7 +496,7 @@ quality.edges = ptgl::EdgeQuality::Balanced; // Default: 2x per axis
 quality.cacheStaticEdges = true; // Opt-in; default false
 quality.collectTimings = true;   // Default false
 view.setRenderQualitySettings(quality);
-// After changes to geometry, transforms, visibility, sidedness, or zero opacity:
+// After changes to geometry captured by custom render callbacks:
 view.invalidateEdgeCache();
 const auto stats = view.renderStatistics(); // Last completed frame
 ```
@@ -404,11 +510,13 @@ and `edgeTargetWidth/Height` report the scale and dimensions actually used.
 
 Static caching reuses the depth/normal captures and explicit edge commands.
 Camera, projection and target-size changes trigger recapture automatically.
-Applications must call `invalidateEdgeCache()` when scene content changes, including
-geometry drawn directly by callbacks. Lighting, edge width/color/angle, and selection
-opacity changes that stay above zero do not require recapture. Keep caching disabled
-for animated content unless invalidation is provided. The demo invalidates after
-TransformHandle changes, and retains cached surfaces while the light moves.
+Item addition/removal, visibility, enabled state, sidedness and changes to/from zero
+opacity also trigger recapture automatically. `ObjectScene` tracks its objects'
+transforms, including TransformHandle edits. For other changing geometry/transforms
+drawn directly by callbacks, call `invalidateEdgeCache()` or `notifySceneChanged()`.
+Lighting, edge width/color/angle, and opacity changes that stay above zero do not
+require recapture. Keep caching disabled for animated content unless invalidation
+is provided. The demo retains cached surfaces while the light moves.
 
 `edgeDrawCalls` and `edgeTriangles` count geometry submitted during the two capture
 passes; both are zero when reused. They exclude feature-line composition and other
@@ -434,8 +542,8 @@ The GLFW driver uses framebuffer pixels for rendering, picking and pointer event
 converting GLFW cursor coordinates on HiDPI displays. `setWindowSize()` still uses
 GLFW screen units. An edge width of 1 means one physical framebuffer pixel.
 
-`PlasticGraphicsView` retains its public API and nested `RenderStyle` name (also
-available as `ptgl::RenderStyle`). It snapshots settings and coordinates the view;
+`StyledGraphicsView` exposes the rendering settings and nested `RenderStyle` name
+(also available as `ptgl::RenderStyle`). It snapshots settings and coordinates the view;
 `SceneStyleRenderer` selects the style, `PlasticSurfaceRenderer` and
 `CadSurfaceRenderer` own surface shading, and `CadEdgeRenderer` owns edge passes.
 Shadows, picking, transparency and overlays remain shared. Rebuild consumers after

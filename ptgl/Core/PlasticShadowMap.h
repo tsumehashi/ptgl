@@ -2,7 +2,7 @@
 #define PTGL_CORE_PLASTICSHADOWMAP_H_
 
 #include <functional>
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 
 namespace ptgl {
 namespace detail {
@@ -16,7 +16,7 @@ public:
     PlasticShadowMap& operator=(const PlasticShadowMap&) = delete;
     void initialize();
     void release();
-    bool prepare(const PlasticGraphicsView::ShadowSettings& settings, const PlasticLighting& lighting);
+    bool prepare(const StyledGraphicsView::ShadowSettings& settings, const PlasticLighting& lighting);
     void render(const std::function<void()>& draw);
     void bind(const ShaderProgramPtr& program, bool enabled);
     void unbind();
@@ -39,7 +39,7 @@ private:
     GLint savedTexture_ = 0;
     GLint savedSampler_ = 0;
     bool bound_ = false;
-    PlasticGraphicsView::ShadowSettings settings_;
+    StyledGraphicsView::ShadowSettings settings_;
     Eigen::Matrix4d view_ = Eigen::Matrix4d::Identity();
     Eigen::Matrix4d projection_ = Eigen::Matrix4d::Identity();
 };

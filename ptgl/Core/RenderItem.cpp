@@ -114,6 +114,38 @@ void Render3DItem::drawBox(const double pos[3], const double R[9], const double 
     setItem(data_, item);
 }
 
+void Render3DItem::drawRoundedBox(const double pos[3], const double R[9], const double sides[3], double radius, int segments)
+{
+    DrawRoundedBoxItem item;
+    setPos(item, pos, R);
+    setVal<3>(item.sides, sides);
+    item.radius = radius;
+    item.segments = segments;
+    setItem(data_, item);
+}
+
+void Render3DItem::drawRoundedCylinder(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments)
+{
+    DrawRoundedCylinderItem item;
+    setPos(item, pos, R);
+    item.length = length;
+    item.radius = radius;
+    item.filletRadius = filletRadius;
+    item.segments = segments;
+    setItem(data_, item);
+}
+
+void Render3DItem::drawRoundedCone(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments)
+{
+    DrawRoundedConeItem item;
+    setPos(item, pos, R);
+    item.length = length;
+    item.radius = radius;
+    item.filletRadius = filletRadius;
+    item.segments = segments;
+    setItem(data_, item);
+}
+
 void Render3DItem::drawSphere(const double pos[3], const double R[9], double r)
 {
     DrawSphereItem item;
@@ -437,6 +469,9 @@ int Render3DItem::getItemSize(int itemType) const
     case DrawPointItemType: return sizeof(DrawPointItem); break;
     case DrawLineItemType: return sizeof(DrawLineItem); break;
     case DrawBoxItemType: return sizeof(DrawBoxItem); break;
+    case DrawRoundedBoxItemType: return sizeof(DrawRoundedBoxItem); break;
+    case DrawRoundedCylinderItemType: return sizeof(DrawRoundedCylinderItem); break;
+    case DrawRoundedConeItemType: return sizeof(DrawRoundedConeItem); break;
     case DrawSphereItemType: return sizeof(DrawSphereItem); break;
     case DrawCylinderItemType: return sizeof(DrawCylinderItem); break;
     case DrawCapsuleItemType: return sizeof(DrawCapsuleItem); break;
@@ -517,6 +552,24 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     {
         DrawBoxItem* item = (DrawBoxItem*)ptr;
         r->drawBox(item->pos, item->R, item->sides);
+        break;
+    }
+    case DrawRoundedBoxItemType:
+    {
+        const auto* item = reinterpret_cast<const DrawRoundedBoxItem*>(ptr);
+        r->drawRoundedBox(item->pos, item->R, item->sides, item->radius, item->segments);
+        break;
+    }
+    case DrawRoundedCylinderItemType:
+    {
+        const auto* item = reinterpret_cast<const DrawRoundedCylinderItem*>(ptr);
+        r->drawRoundedCylinder(item->pos, item->R, item->length, item->radius, item->filletRadius, item->segments);
+        break;
+    }
+    case DrawRoundedConeItemType:
+    {
+        const auto* item = reinterpret_cast<const DrawRoundedConeItem*>(ptr);
+        r->drawRoundedCone(item->pos, item->R, item->length, item->radius, item->filletRadius, item->segments);
         break;
     }
     case DrawSphereItemType:

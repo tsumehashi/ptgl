@@ -18,6 +18,8 @@ public:
     virtual ~TransformHandle();
 
     void setTransform(TransformPtr transform);
+    // Disabling the whole handle preserves the configured translation/rotation modes.
+    void setEnabled(bool enabled) override;
     void setHandleScale(double scale);
     void setAutoHandleScale(bool on);
 
@@ -47,6 +49,8 @@ protected:
 
     TranslateHandlePtr translateHandle_;
     RotateHandlePtr rotateHandle_;
+    bool enableTranslate_ = true;
+    bool enableRotate_ = true;
 
     std::function<void ()> stateChangedStartFunc_;
     std::function<void ()> stateChangedFunc_;

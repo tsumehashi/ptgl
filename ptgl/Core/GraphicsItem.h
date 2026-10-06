@@ -51,7 +51,7 @@ public:
     double opacity() const { return opacity_; }
     void setCastsShadow(bool on) { castsShadow_ = on; }
     bool castsShadow() const { return castsShadow_; }
-    void setDoubleSided(bool on) { doubleSided_ = on; }
+    void setDoubleSided(bool on);
     bool isDoubleSided() const { return doubleSided_; }
 
     // enabledWheelEvent (default disabled)

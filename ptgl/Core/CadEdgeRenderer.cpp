@@ -224,7 +224,7 @@ void CadEdgeRenderer::addFeatures(std::shared_ptr<const VertexList> vertices, co
         features_.push_back({std::move(vertices), model});
 }
 bool CadEdgeRenderer::render(const Eigen::Matrix4d &projection, const Eigen::Matrix4d &view,
-                             const PlasticGraphicsView::EdgeSettings &settings,
+                             const StyledGraphicsView::EdgeSettings &settings,
                              const RenderQualitySettings &quality, std::uint64_t revision,
                              RenderStatistics &stats, const std::function<void(bool)> &draw)
 {

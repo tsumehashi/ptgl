@@ -1,6 +1,6 @@
 #ifndef PTGL_CORE_SURFACERENDERER_H_
 #define PTGL_CORE_SURFACERENDERER_H_
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 namespace ptgl
 {
 namespace detail
@@ -14,8 +14,8 @@ class SurfaceRenderer
     void release() { program_.reset(); }
     ShaderProgramPtr program() const { return program_; }
     virtual void bind(const Camera &, const PlasticLighting &, const CadSettings &,
-                      const PlasticGraphicsView::EnvironmentSettings &,
-                      const PlasticGraphicsView::AmbientOcclusionSettings &) = 0;
+                      const StyledGraphicsView::EnvironmentSettings &,
+                      const StyledGraphicsView::AmbientOcclusionSettings &) = 0;
 
   protected:
     ShaderProgramPtr program_;
@@ -25,16 +25,16 @@ class PlasticSurfaceRenderer final : public SurfaceRenderer
   public:
     void initialize() override;
     void bind(const Camera &, const PlasticLighting &, const CadSettings &,
-              const PlasticGraphicsView::EnvironmentSettings &,
-              const PlasticGraphicsView::AmbientOcclusionSettings &) override;
+              const StyledGraphicsView::EnvironmentSettings &,
+              const StyledGraphicsView::AmbientOcclusionSettings &) override;
 };
 class CadSurfaceRenderer final : public SurfaceRenderer
 {
   public:
     void initialize() override;
     void bind(const Camera &, const PlasticLighting &, const CadSettings &,
-              const PlasticGraphicsView::EnvironmentSettings &,
-              const PlasticGraphicsView::AmbientOcclusionSettings &) override;
+              const StyledGraphicsView::EnvironmentSettings &,
+              const StyledGraphicsView::AmbientOcclusionSettings &) override;
 };
 } // namespace detail
 } // namespace ptgl

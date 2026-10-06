@@ -2,6 +2,7 @@
 #define PTGL_CORE_RENDERER3D_H_
 
 #include <array>
+#include <list>
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -144,6 +145,26 @@ public:
     void drawBox(const double pos[3], const double R[9], const double sides[3]);
     template <typename T = vec3d, typename U = vec9d, typename V = vec3d>
     void drawBox(const T& pos, const U& R, const V& sides) { drawBox(getData(getVec<3>(pos)), getData(getVec<9>(R)), getData(getVec<3>(sides))); }
+
+    // Rounded primitives share all scene passes and cache up to 16 parameter
+    // combinations per renderer. Geometry changes require edge-cache invalidation
+    // when the view opts into static caching. Invalid dimensions/radii/segments
+    // throw std::invalid_argument; see PrimitiveShapeVertex for radius limits.
+    void drawRoundedBox(const double pos[3], const double R[9], const double sides[3], double radius, int segments = 6);
+    template <typename T = vec3d, typename U = vec9d, typename V = vec3d>
+    void drawRoundedBox(const T& pos, const U& R, const V& sides, double radius, int segments = 6) {
+        drawRoundedBox(getData(getVec<3>(pos)), getData(getVec<9>(R)), getData(getVec<3>(sides)), radius, segments);
+    }
+    void drawRoundedCylinder(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments = 6);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawRoundedCylinder(const T& pos, const U& R, double length, double radius, double filletRadius, int segments = 6) {
+        drawRoundedCylinder(getData(getVec<3>(pos)), getData(getVec<9>(R)), length, radius, filletRadius, segments);
+    }
+    void drawRoundedCone(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments = 6);
+    template <typename T = vec3d, typename U = vec9d>
+    void drawRoundedCone(const T& pos, const U& R, double length, double radius, double filletRadius, int segments = 6) {
+        drawRoundedCone(getData(getVec<3>(pos)), getData(getVec<9>(R)), length, radius, filletRadius, segments);
+    }
 
     virtual void drawSphere(const double pos[3], const double R[9], double r);
     template <typename T = vec3d, typename U = vec9d>
@@ -388,6 +409,12 @@ protected:
         size_t numIndices = 0;
     };
     std::unordered_map<std::string, VBOInfo> registeredVerticesVBOInfoMap_;
+    struct RoundedMesh {
+        std::array<double, 6> key;
+        VBOInfo info;
+    };
+    std::list<RoundedMesh> roundedMeshes_;
+    void drawRoundedPrimitive(const double pos[3], const double R[9], const std::array<double, 6>& key);
 
     // attribute/uniform location
     GLint attrVertexLocation_ = -1;

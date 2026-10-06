@@ -2,7 +2,7 @@
 #define PTGL_CORE_CADEDGERENDERER_H_
 
 #include <functional>
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 #include "SceneRenderSupport.h"
 #include "RenderTimer.h"
 
@@ -20,7 +20,7 @@ class CadEdgeRenderer
     void release();
     ShaderProgramPtr captureProgram() const { return capture_; }
     bool render(const Eigen::Matrix4d &projection, const Eigen::Matrix4d &view,
-                const PlasticGraphicsView::EdgeSettings &settings, const RenderQualitySettings &quality,
+                const StyledGraphicsView::EdgeSettings &settings, const RenderQualitySettings &quality,
                 std::uint64_t revision, RenderStatistics &stats, const std::function<void(bool depth)> &draw);
     void addFeatures(std::shared_ptr<const VertexList> vertices, const Eigen::Matrix4d &model);
 

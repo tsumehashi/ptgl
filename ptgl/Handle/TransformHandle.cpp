@@ -56,12 +56,21 @@ void TransformHandle::setGlobalCoordinateMode(bool on)
 
 void TransformHandle::setEnableTranslate(bool on)
 {
-    translateHandle_->setEnabled(on);
+    enableTranslate_ = on;
+    translateHandle_->setEnabled(isEnabled() && on);
 }
 
 void TransformHandle::setEnableRotate(bool on)
 {
-    rotateHandle_->setEnabled(on);
+    enableRotate_ = on;
+    rotateHandle_->setEnabled(isEnabled() && on);
+}
+
+void TransformHandle::setEnabled(bool enabled)
+{
+    GraphicsItem::setEnabled(enabled);
+    translateHandle_->setEnabled(enabled && enableTranslate_);
+    rotateHandle_->setEnabled(enabled && enableRotate_);
 }
 
 bool TransformHandle::isEnabledTranslate() const

@@ -1,6 +1,6 @@
 #ifndef PTGL_CORE_SCENESTYLERENDERER_H_
 #define PTGL_CORE_SCENESTYLERENDERER_H_
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 
 namespace ptgl
 {
@@ -12,13 +12,13 @@ class SceneStyleRenderer : public Renderer3D
 {
   public:
     explicit SceneStyleRenderer(GraphicsView *view) : Renderer3D(view) {}
-    PlasticGraphicsView::RenderStyle style = PlasticGraphicsView::RenderStyle::Plastic;
+    StyledGraphicsView::RenderStyle style = StyledGraphicsView::RenderStyle::Plastic;
     Material defaultMaterial;
     PlasticLighting lighting;
-    PlasticGraphicsView::ShadowSettings shadows;
-    PlasticGraphicsView::EnvironmentSettings environment;
-    PlasticGraphicsView::AmbientOcclusionSettings occlusion;
-    PlasticGraphicsView::EdgeSettings edges;
+    StyledGraphicsView::ShadowSettings shadows;
+    StyledGraphicsView::EnvironmentSettings environment;
+    StyledGraphicsView::AmbientOcclusionSettings occlusion;
+    StyledGraphicsView::EdgeSettings edges;
     std::atomic<bool> available{false};
     std::atomic<bool> shadowsActive{false};
     std::atomic<bool> occlusionActive{false};

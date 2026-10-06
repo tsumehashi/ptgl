@@ -1,4 +1,4 @@
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -6,38 +6,38 @@
 #include "SceneStyleRenderer.h"
 
 namespace ptgl {
-PlasticGraphicsView::PlasticGraphicsView(GraphicsDriverPtr driver) : GraphicsView(std::move(driver))
+StyledGraphicsView::StyledGraphicsView(GraphicsDriverPtr driver) : GraphicsView(std::move(driver))
 {
     renderer3D_ = detail::makeSceneStyleRenderer(this);
 }
 
-PlasticGraphicsView::~PlasticGraphicsView() = default;
+StyledGraphicsView::~StyledGraphicsView() = default;
 
-void PlasticGraphicsView::setRenderStyle(RenderStyle style)
+void StyledGraphicsView::setRenderStyle(RenderStyle style)
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     renderStyle_ = style;
 }
 
-PlasticGraphicsView::RenderStyle PlasticGraphicsView::renderStyle() const
+StyledGraphicsView::RenderStyle StyledGraphicsView::renderStyle() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return renderStyle_;
 }
 
-void PlasticGraphicsView::setDefaultMaterial(const Material& material)
+void StyledGraphicsView::setDefaultMaterial(const Material& material)
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     defaultMaterial_ = material;
 }
 
-Material PlasticGraphicsView::defaultMaterial() const
+Material StyledGraphicsView::defaultMaterial() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return defaultMaterial_;
 }
 
-void PlasticGraphicsView::setPlasticLighting(const PlasticLighting& lighting)
+void StyledGraphicsView::setPlasticLighting(const PlasticLighting& lighting)
 {
     auto validDirection = [](const std::array<double, 3>& d) {
         Eigen::Vector3d v(d[0], d[1], d[2]);
@@ -56,13 +56,13 @@ void PlasticGraphicsView::setPlasticLighting(const PlasticLighting& lighting)
     lighting_ = lighting;
 }
 
-PlasticLighting PlasticGraphicsView::plasticLighting() const
+PlasticLighting StyledGraphicsView::plasticLighting() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return lighting_;
 }
 
-void PlasticGraphicsView::setShadowSettings(const ShadowSettings& settings)
+void StyledGraphicsView::setShadowSettings(const ShadowSettings& settings)
 {
     auto inRange = [](double value, double lo, double hi) {
         return std::isfinite(value) && value >= lo && value <= hi;
@@ -80,29 +80,29 @@ void PlasticGraphicsView::setShadowSettings(const ShadowSettings& settings)
     shadows_ = settings;
 }
 
-PlasticGraphicsView::ShadowSettings PlasticGraphicsView::shadowSettings() const
+StyledGraphicsView::ShadowSettings StyledGraphicsView::shadowSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return shadows_;
 }
 
-PlasticGraphicsView::ShadowSettings PlasticGraphicsView::effectiveShadowSettings() const
+StyledGraphicsView::ShadowSettings StyledGraphicsView::effectiveShadowSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return effectiveShadows_;
 }
 
-bool PlasticGraphicsView::shadowsActive() const
+bool StyledGraphicsView::shadowsActive() const
 {
     return static_cast<detail::SceneStyleRenderer*>(renderer3D_.get())->shadowsActive.load();
 }
 
-bool PlasticGraphicsView::plasticRenderingAvailable() const
+bool StyledGraphicsView::plasticRenderingAvailable() const
 {
     return static_cast<detail::SceneStyleRenderer*>(renderer3D_.get())->available.load();
 }
 
-void PlasticGraphicsView::setEnvironmentSettings(const EnvironmentSettings &settings)
+void StyledGraphicsView::setEnvironmentSettings(const EnvironmentSettings &settings)
 {
     if (!std::isfinite(settings.strength) || settings.strength < 0 || settings.strength > 4 ||
         !std::isfinite(settings.rotation) || std::abs(settings.rotation) > 360)
@@ -111,13 +111,13 @@ void PlasticGraphicsView::setEnvironmentSettings(const EnvironmentSettings &sett
     environment_ = settings;
 }
 
-PlasticGraphicsView::EnvironmentSettings PlasticGraphicsView::environmentSettings() const
+StyledGraphicsView::EnvironmentSettings StyledGraphicsView::environmentSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return environment_;
 }
 
-void PlasticGraphicsView::setAmbientOcclusionSettings(const AmbientOcclusionSettings &settings)
+void StyledGraphicsView::setAmbientOcclusionSettings(const AmbientOcclusionSettings &settings)
 {
     if (!std::isfinite(settings.radius) || settings.radius <= 0 || settings.radius > 100 ||
         !std::isfinite(settings.strength) || settings.strength < 0 || settings.strength > 4 ||
@@ -127,18 +127,18 @@ void PlasticGraphicsView::setAmbientOcclusionSettings(const AmbientOcclusionSett
     occlusion_ = settings;
 }
 
-PlasticGraphicsView::AmbientOcclusionSettings PlasticGraphicsView::ambientOcclusionSettings() const
+StyledGraphicsView::AmbientOcclusionSettings StyledGraphicsView::ambientOcclusionSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return occlusion_;
 }
 
-bool PlasticGraphicsView::ambientOcclusionActive() const
+bool StyledGraphicsView::ambientOcclusionActive() const
 {
     return static_cast<detail::SceneStyleRenderer *>(renderer3D_.get())->occlusionActive.load();
 }
 
-void PlasticGraphicsView::setEdgeSettings(const EdgeSettings& settings)
+void StyledGraphicsView::setEdgeSettings(const EdgeSettings& settings)
 {
     if (!std::isfinite(settings.width) || settings.width < 0.5 || settings.width > 4.0 ||
         !std::isfinite(settings.normalAngle) || settings.normalAngle < 5 || settings.normalAngle > 120 ||
@@ -150,23 +150,23 @@ void PlasticGraphicsView::setEdgeSettings(const EdgeSettings& settings)
     edges_ = settings;
 }
 
-PlasticGraphicsView::EdgeSettings PlasticGraphicsView::edgeSettings() const
+StyledGraphicsView::EdgeSettings StyledGraphicsView::edgeSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return edges_;
 }
 
-bool PlasticGraphicsView::cadRenderingAvailable() const
+bool StyledGraphicsView::cadRenderingAvailable() const
 {
     return static_cast<detail::SceneStyleRenderer*>(renderer3D_.get())->cadAvailable.load();
 }
 
-bool PlasticGraphicsView::edgesActive() const
+bool StyledGraphicsView::edgesActive() const
 {
     return static_cast<detail::SceneStyleRenderer*>(renderer3D_.get())->edgesActive.load();
 }
 
-void PlasticGraphicsView::executeRenderEvent()
+void StyledGraphicsView::executeRenderEvent()
 {
     auto* renderer = static_cast<detail::SceneStyleRenderer*>(renderer3D_.get());
     {
@@ -187,7 +187,7 @@ void PlasticGraphicsView::executeRenderEvent()
     statistics_ = renderer->statistics;
 }
 
-void PlasticGraphicsView::setCadSettings(const CadSettings& settings)
+void StyledGraphicsView::setCadSettings(const CadSettings& settings)
 {
     auto range = [](double v, double lo, double hi) { return std::isfinite(v) && v >= lo && v <= hi; };
     Eigen::Vector3d fill(settings.fillDirection.data());
@@ -200,13 +200,13 @@ void PlasticGraphicsView::setCadSettings(const CadSettings& settings)
     cad_ = settings;
 }
 
-PlasticGraphicsView::CadSettings PlasticGraphicsView::cadSettings() const
+StyledGraphicsView::CadSettings StyledGraphicsView::cadSettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return cad_;
 }
 
-void PlasticGraphicsView::setRenderQualitySettings(const RenderQualitySettings& settings)
+void StyledGraphicsView::setRenderQualitySettings(const RenderQualitySettings& settings)
 {
     if (settings.edges != EdgeQuality::Fast && settings.edges != EdgeQuality::Balanced &&
         settings.edges != EdgeQuality::High)
@@ -215,34 +215,39 @@ void PlasticGraphicsView::setRenderQualitySettings(const RenderQualitySettings& 
     quality_ = settings;
 }
 
-PlasticGraphicsView::RenderQualitySettings PlasticGraphicsView::renderQualitySettings() const
+StyledGraphicsView::RenderQualitySettings StyledGraphicsView::renderQualitySettings() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return quality_;
 }
 
-void PlasticGraphicsView::invalidateEdgeCache()
+void StyledGraphicsView::invalidateEdgeCache()
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     ++edgeRevision_;
 }
 
-PlasticGraphicsView::RenderStatistics PlasticGraphicsView::renderStatistics() const
+StyledGraphicsView::RenderStatistics StyledGraphicsView::renderStatistics() const
 {
     std::lock_guard<std::mutex> lock(settingsMutex_);
     return statistics_;
 }
 
-void PlasticGraphicsView::executePrepareRenderScene(Renderer3D* r)
+void StyledGraphicsView::executePrepareRenderScene(Renderer3D* r)
 {
     GraphicsView::executePrepareRenderScene(r);
+    // Include object/animation changes made after the frame's settings snapshot.
+    {
+        std::lock_guard<std::mutex> lock(settingsMutex_);
+        static_cast<detail::SceneStyleRenderer*>(r)->edgeRevision = edgeRevision_;
+    }
     static_cast<detail::SceneStyleRenderer*>(r)->renderShadows([&] { executeRenderScene(r); });
     static_cast<detail::SceneStyleRenderer*>(r)->renderOcclusion([&] { executeRenderScene(r); });
     std::lock_guard<std::mutex> lock(settingsMutex_);
     effectiveShadows_ = static_cast<detail::SceneStyleRenderer*>(r)->shadows;
 }
 
-void PlasticGraphicsView::executeRenderScenePostProcess(Renderer3D* r)
+void StyledGraphicsView::executeRenderScenePostProcess(Renderer3D* r)
 {
     static_cast<detail::SceneStyleRenderer*>(r)->renderEdges([&] { executeRenderScene(r); });
     GraphicsView::executeRenderScenePostProcess(r);

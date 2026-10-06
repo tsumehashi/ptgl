@@ -32,6 +32,7 @@ void GraphicsItem::addChild(GraphicsItemPtr item)
         ptr->setGraphicsView(this->graphicsView_);
     });
     children_.push_back(item);
+    if (graphicsView_) graphicsView_->notifySceneChanged();
 }
 
 void GraphicsItem::removeChild(GraphicsItemPtr item)
@@ -43,11 +44,13 @@ void GraphicsItem::removeChild(GraphicsItemPtr item)
             ptr->setGraphicsView(nullptr);
         });
         children_.erase(itr);
+        if (graphicsView_) graphicsView_->notifySceneChanged();
     }
 }
 
 void GraphicsItem::setVisible(bool visible)
 {
+    if (visible_ != visible && graphicsView_) graphicsView_->notifySceneChanged();
     visible_ = visible;
     for (auto ptr : children_) {
         ptr->setVisible(visible);
@@ -56,6 +59,7 @@ void GraphicsItem::setVisible(bool visible)
 
 void GraphicsItem::setEnabled(bool enabled)
 {
+    if (enabled_ != enabled && graphicsView_) graphicsView_->notifySceneChanged();
     enabled_ = enabled;
     for (auto ptr : children_) {
         ptr->setEnabled(enabled);
@@ -75,7 +79,14 @@ void GraphicsItem::setOpacity(double opacity)
     if (!std::isfinite(opacity) || opacity < 0 || opacity > 1) {
         throw std::invalid_argument("GraphicsItem opacity must be in [0, 1]");
     }
+    if ((opacity_ == 0) != (opacity == 0) && graphicsView_) graphicsView_->notifySceneChanged();
     opacity_ = opacity;
+}
+
+void GraphicsItem::setDoubleSided(bool on)
+{
+    if (doubleSided_ != on && graphicsView_) graphicsView_->notifySceneChanged();
+    doubleSided_ = on;
 }
 
 void GraphicsItem::setEnabledWheelEvent(bool enable)

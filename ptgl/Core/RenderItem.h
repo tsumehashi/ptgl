@@ -27,6 +27,9 @@ public:
     void drawPoint(const double pos[3]);
     void drawLine(const double pos1[3], const double pos2[3]);
     void drawBox(const double pos[3], const double R[9], const double sides[3]);
+    void drawRoundedBox(const double pos[3], const double R[9], const double sides[3], double radius, int segments = 6);
+    void drawRoundedCylinder(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments = 6);
+    void drawRoundedCone(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments = 6);
     void drawSphere(const double pos[3], const double R[9], double r);
     void drawCylinder(const double pos[3], const double R[9], double length, double radius, bool cap = true);
     void drawCapsule(const double pos[3], const double R[9], double length, double radius);
@@ -115,6 +118,9 @@ private:
         TransformItemType,
         ScaleItemType,
         MaterialItemType, // Append to preserve the existing serialized command IDs.
+        DrawRoundedBoxItemType,
+        DrawRoundedCylinderItemType,
+        DrawRoundedConeItemType,
         NumItemType,
     };
 
@@ -128,6 +134,9 @@ private:
     struct DrawPointItem { const int itemType = DrawPointItemType;double pos[3]; };
     struct DrawLineItem { const int itemType = DrawLineItemType;double pos1[3]; double pos2[3]; };
     struct DrawBoxItem { const int itemType = DrawBoxItemType;double pos[3]; double R[9]; double sides[3]; };
+    struct DrawRoundedBoxItem { const int itemType = DrawRoundedBoxItemType; double pos[3]; double R[9]; double sides[3]; double radius; int segments; };
+    struct DrawRoundedCylinderItem { const int itemType = DrawRoundedCylinderItemType; double pos[3]; double R[9]; double length; double radius; double filletRadius; int segments; };
+    struct DrawRoundedConeItem { const int itemType = DrawRoundedConeItemType; double pos[3]; double R[9]; double length; double radius; double filletRadius; int segments; };
     struct DrawSphereItem { const int itemType = DrawSphereItemType;double pos[3]; double R[9]; double r; };
     struct DrawCylinderItem { const int itemType = DrawCylinderItemType; double pos[3]; double R[9]; double length; double radius; int drawCap; };
     struct DrawCapsuleItem { const int itemType = DrawCapsuleItemType; double pos[3]; double R[9]; double length; double radius; };

@@ -40,6 +40,8 @@ void Renderer3D::finalizeConfiguration()
     }
     for (auto& entry : registeredVerticesVBOInfoMap_) entry.second.vbo.release();
     registeredVerticesVBOInfoMap_.clear();
+    for (auto& mesh : roundedMeshes_) mesh.info.vbo.release();
+    roundedMeshes_.clear();
 }
 
 void Renderer3D::initializeConfiguration()
@@ -237,6 +239,21 @@ void Renderer3D::drawBox(const double pos[3], const double R[9], const double si
     updateModelMatrixParameter(affine);
 
        submitMesh(primitiveBoxVBO_);
+}
+
+void Renderer3D::drawRoundedBox(const double pos[3], const double R[9], const double sides[3], double radius, int segments)
+{
+    drawRoundedPrimitive(pos, R, {{0, sides[0], sides[1], sides[2], radius, double(segments)}});
+}
+
+void Renderer3D::drawRoundedCylinder(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments)
+{
+    drawRoundedPrimitive(pos, R, {{1, length, radius, 0, filletRadius, double(segments)}});
+}
+
+void Renderer3D::drawRoundedCone(const double pos[3], const double R[9], double length, double radius, double filletRadius, int segments)
+{
+    drawRoundedPrimitive(pos, R, {{2, length, radius, 0, filletRadius, double(segments)}});
 }
 
 void Renderer3D::drawSphere(const double pos[3], const double R[9], double r)
@@ -641,6 +658,40 @@ std::shared_ptr<const VertexList> featureVertices(const VertexSet& mesh)
     return result;
 }
 }
+void Renderer3D::drawRoundedPrimitive(const double pos[3], const double R[9], const std::array<double, 6>& key)
+{
+    auto found = std::find_if(roundedMeshes_.begin(), roundedMeshes_.end(),
+                             [&](const RoundedMesh& mesh) { return mesh.key == key; });
+    if (found == roundedMeshes_.end()) {
+        // Generate and validate before touching the existing GPU cache or transform.
+        VertexSet mesh;
+        const int segments = static_cast<int>(key[5]);
+        if (key[0] == 0) mesh = PrimitiveShapeVertex::generateRoundedBox({key[1], key[2], key[3]}, key[4], segments);
+        else if (key[0] == 1) mesh = PrimitiveShapeVertex::generateRoundedCylinder(key[1], key[2], key[4], segments);
+        else mesh = PrimitiveShapeVertex::generateRoundedCone(key[1], key[2], key[4], segments);
+        auto edges = featureVertices(mesh);
+        if (roundedMeshes_.size() == 16) {
+            roundedMeshes_.back().info.vbo.release();
+            roundedMeshes_.pop_back();
+        }
+        roundedMeshes_.emplace_front();
+        auto& entry = roundedMeshes_.front();
+        entry.key = key;
+        entry.info.featureEdges = std::move(edges);
+        entry.info.numVertices = mesh.vertices.size();
+        entry.info.numIndices = mesh.indices.size();
+        entry.info.vbo.loadVertices(mesh.vertices.data(), mesh.vertices.size());
+        entry.info.vbo.loadIndices(mesh.indices.data(), mesh.indices.size());
+    } else {
+        roundedMeshes_.splice(roundedMeshes_.begin(), roundedMeshes_, found);
+    }
+    const auto& info = roundedMeshes_.front().info;
+    shaderProgram()->setParameter(unifColorLocation_, color_[0], color_[1], color_[2], color_[3]);
+    updateModelMatrixParameter(tf_.transformation() * ptgl::transformation(pos, R));
+    submitMesh(info.vbo);
+    if (acceptsFeatureEdges() && info.featureEdges) submitFeatureEdges(info.featureEdges);
+}
+
 void Renderer3D::drawMesh(const VertexSet& mesh)
 {
     // drawVertex's indexed path needs an index for every triangle-soup vertex.

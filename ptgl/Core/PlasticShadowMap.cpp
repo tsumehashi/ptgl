@@ -118,7 +118,7 @@ void PlasticShadowMap::initialize()
     glBindTexture(GL_TEXTURE_2D, oldTexture);
 
     if (!glGenFramebuffers || !glBindFramebuffer || !glGenRenderbuffers) {
-        std::cerr << "PlasticGraphicsView: framebuffer objects unavailable; keeping plastic lighting without shadows.\n";
+        std::cerr << "StyledGraphicsView: framebuffer objects unavailable; keeping plastic lighting without shadows.\n";
         return;
     }
     // Some desktop GLEW builds omit this GLES entry point. In that case the
@@ -127,7 +127,7 @@ void PlasticShadowMap::initialize()
         GLint range[2], precision = 0;
         glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, range, &precision);
         if (precision == 0) {
-            std::cerr << "PlasticGraphicsView: shadows require fragment highp; keeping plastic lighting without shadows.\n";
+            std::cerr << "StyledGraphicsView: shadows require fragment highp; keeping plastic lighting without shadows.\n";
             return;
         }
     }
@@ -135,7 +135,7 @@ void PlasticShadowMap::initialize()
     auto fragment = Shader::loadFromSource(Shader::FragmentShader, fragmentSource);
     auto program = std::make_shared<ShaderProgram>();
     if (vertex && fragment && program->linkShaders({vertex, fragment})) program_ = program;
-    else std::cerr << "PlasticGraphicsView: shadow shader unavailable; keeping plastic lighting without shadows.\n";
+    else std::cerr << "StyledGraphicsView: shadow shader unavailable; keeping plastic lighting without shadows.\n";
 }
 
 void PlasticShadowMap::releaseMap()
@@ -184,7 +184,7 @@ bool PlasticShadowMap::allocate(int size)
     if (!complete) {
         releaseMap();
         failedSize_ = size;
-        std::cerr << "PlasticGraphicsView: shadow framebuffer unavailable; keeping plastic lighting without shadows.\n";
+        std::cerr << "StyledGraphicsView: shadow framebuffer unavailable; keeping plastic lighting without shadows.\n";
         return false;
     }
     size_ = size;
@@ -192,7 +192,7 @@ bool PlasticShadowMap::allocate(int size)
     return true;
 }
 
-bool PlasticShadowMap::prepare(const PlasticGraphicsView::ShadowSettings& settings, const PlasticLighting& lighting)
+bool PlasticShadowMap::prepare(const StyledGraphicsView::ShadowSettings& settings, const PlasticLighting& lighting)
 {
     if (!program_) return false;
     // Desktop GLEW can leave glClearDepthf unresolved in a GLES context.

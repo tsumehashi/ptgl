@@ -18,6 +18,7 @@
 namespace ptgl {
 
 class GraphicsDriver;
+class ObjectScene;
 namespace detail { class TransparencyRenderer; }
 typedef std::unique_ptr<GraphicsDriver> GraphicsDriverPtr;
 
@@ -82,6 +83,14 @@ public:
     int numGraphicsItems() const { return graphicsItems_.size(); }
     GraphicsItemPtr graphicsItem(int i) { return graphicsItems_[i]; }
     const GraphicsItemList& graphicsItems() const { return graphicsItems_; }
+
+    // Opt into reusable object selection/editing; include ObjectScene.h to use it.
+    // Call from the view/event thread, or before execute().
+    ObjectScene& objectScene();
+    // Finish the captured item gesture without waiting for a physical mouse release.
+    void cancelGraphicsItemDrag();
+    // Notify cached scene passes about geometry/visibility changes.
+    virtual void notifySceneChanged() {}
 
     GraphicsItemList getTraversedGraphicsItems() const;
 
@@ -277,6 +286,7 @@ protected:
 
     // GraphicsItem
     GraphicsItemList graphicsItems_;
+    std::unique_ptr<ObjectScene> objectScene_;
 
     GraphicsItemPtr mouseGraphicsItem_;
     GraphicsItemPtr pickedGraphicsItem_;

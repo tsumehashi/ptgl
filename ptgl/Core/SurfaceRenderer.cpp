@@ -16,8 +16,8 @@ void PlasticSurfaceRenderer::initialize()
         sceneProgram(PlasticShaderSource::VertexShaderSource, PlasticShaderSource::FragmentShaderSource);
 }
 void PlasticSurfaceRenderer::bind(const Camera &camera, const PlasticLighting &lighting, const CadSettings &,
-                                  const PlasticGraphicsView::EnvironmentSettings &environment,
-                                  const PlasticGraphicsView::AmbientOcclusionSettings &occlusion)
+                                  const StyledGraphicsView::EnvironmentSettings &environment,
+                                  const StyledGraphicsView::AmbientOcclusionSettings &occlusion)
 {
     auto program = program_;
     Eigen::Matrix3d viewRotation = camera.modelview().block<3, 3>(0, 0);
@@ -90,8 +90,8 @@ void main() {
 )GLSL");
 }
 void CadSurfaceRenderer::bind(const Camera &camera, const PlasticLighting &lighting, const CadSettings &cad,
-                              const PlasticGraphicsView::EnvironmentSettings &,
-                              const PlasticGraphicsView::AmbientOcclusionSettings &)
+                              const StyledGraphicsView::EnvironmentSettings &,
+                              const StyledGraphicsView::AmbientOcclusionSettings &)
 {
     Eigen::Vector3d key(lighting.keyDirection.data());
     key = camera.modelview().block<3, 3>(0, 0) * (key / key.stableNorm());

@@ -4,7 +4,7 @@
 #include <functional>
 #include "GraphicsView.h"
 #include "Graphics2DView.h"
-#include "PlasticGraphicsView.h"
+#include "StyledGraphicsView.h"
 
 namespace ptgl {
 
@@ -13,7 +13,7 @@ class TemplateQuickGraphicsView;
 
 typedef TemplateQuickGraphicsView<GraphicsView> QuickGraphicsView;
 typedef TemplateQuickGraphicsView<Graphics2DView> QuickGraphics2DView;
-typedef TemplateQuickGraphicsView<PlasticGraphicsView> QuickPlasticGraphicsView;
+typedef TemplateQuickGraphicsView<StyledGraphicsView> QuickStyledGraphicsView;
 
 template <typename GraphicsViewType>
 class TemplateQuickGraphicsView : public GraphicsViewType {

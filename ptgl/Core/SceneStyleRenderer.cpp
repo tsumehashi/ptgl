@@ -111,7 +111,7 @@ class StyledRenderer3D final : public SceneStyleRenderer
         upload(cylinderSide_, cylinderMesh(false));
         plasticSurface_.initialize();
         if (!plasticSurface_.program()) {
-            std::cerr << "PlasticGraphicsView: plastic shader unavailable; using legacy rendering.\n";
+            std::cerr << "StyledGraphicsView: plastic shader unavailable; using legacy rendering.\n";
             return;
         }
         occlusionMap_.initialize();
@@ -140,8 +140,8 @@ class StyledRenderer3D final : public SceneStyleRenderer
     {
         shadowsActive.store(false);
         const bool supportedStyle =
-            (style == PlasticGraphicsView::RenderStyle::Plastic && available.load()) ||
-            (style == PlasticGraphicsView::RenderStyle::CAD && cadAvailable.load());
+            (style == StyledGraphicsView::RenderStyle::Plastic && available.load()) ||
+            (style == StyledGraphicsView::RenderStyle::CAD && cadAvailable.load());
         if (!supportedStyle || !shadowMap_.program() || !shadows.enabled || shadows.strength == 0)
             return;
         if (shadows.autoFit) {
@@ -201,7 +201,7 @@ class StyledRenderer3D final : public SceneStyleRenderer
     void renderOcclusion(const std::function<void()> &draw)
     {
         occlusionActive.store(false);
-        if (!available.load() || style != PlasticGraphicsView::RenderStyle::Plastic || !occlusion.enabled ||
+        if (!available.load() || style != StyledGraphicsView::RenderStyle::Plastic || !occlusion.enabled ||
             occlusion.strength == 0 || !occlusionMap_.program())
             return;
         auto previous = forceUseShaderProgram_;
@@ -238,7 +238,7 @@ class StyledRenderer3D final : public SceneStyleRenderer
             statistics.edgeGpuMilliseconds = gpu;
             statistics.edgeGpuSampleFrame = sample;
         }
-        if (style != PlasticGraphicsView::RenderStyle::CAD || !cadAvailable.load() || !edges.enabled ||
+        if (style != StyledGraphicsView::RenderStyle::CAD || !cadAvailable.load() || !edges.enabled ||
             !cadRenderer_.captureProgram())
             return;
         auto previous = forceUseShaderProgram_;
@@ -303,8 +303,8 @@ class StyledRenderer3D final : public SceneStyleRenderer
             state = RenderOcclusionState;
         if (edgePass_)
             state = RenderEdgeState;
-        auto surface = style == PlasticGraphicsView::RenderStyle::CAD       ? cadSurface_.program()
-                       : style == PlasticGraphicsView::RenderStyle::Plastic ? plasticSurface_.program()
+        auto surface = style == StyledGraphicsView::RenderStyle::CAD       ? cadSurface_.program()
+                       : style == StyledGraphicsView::RenderStyle::Plastic ? plasticSurface_.program()
                                                                             : nullptr;
         smoothPrimitives_ = surface && (state == RenderSceneState || state == RenderPickingState ||
                                         state == RenderShadowState || state == RenderTransparentState ||

@@ -1,4 +1,5 @@
 #include "GraphicsView.h"
+#include "ObjectScene.h"
 #include <set>
 #include <iostream>
 #include "ptgl/Util/MathUtil.h"
@@ -62,7 +63,11 @@ GraphicsView::GraphicsView(std::unique_ptr<GraphicsDriver> driver)
 
 GraphicsView::~GraphicsView()
 {
-
+    objectScene_.reset();
+    for (const auto& item : graphicsItems_)
+        GraphicsItem::traverse(item, [this](GraphicsItemPtr ptr) {
+            if (ptr->graphicsWindow() == this) ptr->setGraphicsView(nullptr);
+        });
 }
 
 void GraphicsView::initialize()
@@ -169,6 +174,7 @@ void GraphicsView::addGraphicsItem(GraphicsItemPtr item)
     GraphicsItem::traverse(item, [&](GraphicsItemPtr ptr){
         ptr->setGraphicsView(this);
     });
+    notifySceneChanged();
 }
 
 void GraphicsView::removeGraphicsItem(GraphicsItemPtr item)
@@ -178,9 +184,40 @@ void GraphicsView::removeGraphicsItem(GraphicsItemPtr item)
     auto itr = std::find(graphicsItems_.begin(), graphicsItems_.end(), item);
     if (itr != graphicsItems_.end()) {
         graphicsItems_.erase(itr);
+        if (objectScene_) objectScene_->itemRemoved(item);
+        auto belongs = [&](const GraphicsItemPtr& candidate) {
+            for (auto p = candidate.get(); p; p = p->parentItem()) if (p == item.get()) return true;
+            return false;
+        };
+        if (belongs(mouseGraphicsItem_)) cancelGraphicsItemDrag();
+        if (belongs(focusedGraphicsItem_)) { focusedGraphicsItem_->setPicked(false); focusedGraphicsItem_.reset(); }
+        if (belongs(hoveredGraphicsItem_)) { hoveredGraphicsItem_->setHoverd(false); hoveredGraphicsItem_.reset(); }
+        if (belongs(pickedGraphicsItem_)) pickedGraphicsItem_.reset();
+        if (belongs(prevMousePressGraphicsItem_)) prevMousePressGraphicsItem_.reset();
+        for (auto& picked : pickIdToItemList_) if (belongs(picked)) picked.reset();
+        if (belongs(pickingEvent_->pickedGraphicsItem()))
+            pickingEvent_->setPickingEvent(false, mouseX_, mouseY_, Eigen::Vector3d::Zero(),
+                Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), nullptr);
         GraphicsItem::traverse(item, [&](GraphicsItemPtr ptr){
             ptr->setGraphicsView(nullptr);
         });
+        notifySceneChanged();
+    }
+}
+
+ObjectScene& GraphicsView::objectScene()
+{
+    if (!objectScene_) objectScene_.reset(new ObjectScene(*this));
+    return *objectScene_;
+}
+
+void GraphicsView::cancelGraphicsItemDrag()
+{
+    auto captured = std::move(mouseGraphicsItem_);
+    prevMousePressGraphicsItem_.reset();
+    if (captured) {
+        graphicsItemMouseEvent_->setReleaseEvent(mouseX_, mouseY_, MouseEvent::MouseButton::LeftButton);
+        captured->executeMouseReleaseEvent(graphicsItemMouseEvent_.get());
     }
 }
 
@@ -306,6 +343,11 @@ void GraphicsView::executeRenderEvent()
     for (auto& item : traversedItems_) {
         item->executePrevProcess();
     }
+
+    // Item callbacks can add/remove objects or alter the camera. Capture exactly
+    // the scene that will be drawn, including those changes, in all cached passes.
+    updateSceneState();
+    if (objectScene_) objectScene_->update();
 
     executePrepareRenderScene(renderer3D_.get());
 
@@ -845,6 +887,7 @@ void GraphicsView::executeDropEvent(DropEvent* e)
 
 void GraphicsView::executePickingUpEvent(PickingEvent* e)
 {
+    if (objectScene_) objectScene_->pick(e->pickedGraphicsItem());
     pickingUpEvent(e);
 }
 

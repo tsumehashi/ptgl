@@ -1,5 +1,5 @@
-#ifndef PTGL_CORE_PLASTICGRAPHICSVIEW_H_
-#define PTGL_CORE_PLASTICGRAPHICSVIEW_H_
+#ifndef PTGL_CORE_STYLEDGRAPHICSVIEW_H_
+#define PTGL_CORE_STYLEDGRAPHICSVIEW_H_
 
 #include <mutex>
 #include "GraphicsView.h"
@@ -7,7 +7,8 @@
 
 namespace ptgl {
 
-class PlasticGraphicsView : public GraphicsView {
+// Switchable Plastic, CAD and Legacy rendering; Plastic is the default style.
+class StyledGraphicsView : public GraphicsView {
 public:
     using RenderStyle = ptgl::RenderStyle;
     using CadSettings = ptgl::CadSettings;
@@ -15,8 +16,8 @@ public:
     using RenderQualitySettings = ptgl::RenderQualitySettings;
     using RenderStatistics = ptgl::RenderStatistics;
 
-    explicit PlasticGraphicsView(GraphicsDriverPtr driver);
-    ~PlasticGraphicsView() override;
+    explicit StyledGraphicsView(GraphicsDriverPtr driver);
+    ~StyledGraphicsView() override;
 
     // These settings may be changed from another thread. One snapshot is
     // applied at the next frame, including its picking and depth passes.
@@ -84,6 +85,7 @@ public:
     // Needed after scene-content changes when cacheStaticEdges is enabled.
     // Thread safe; takes effect at the next frame boundary.
     void invalidateEdgeCache();
+    void notifySceneChanged() override { invalidateEdgeCache(); }
     // Last completed frame; GPU samples can originate from an earlier frame.
     RenderStatistics renderStatistics() const;
 

@@ -1,6 +1,7 @@
 #include "PrimitiveShapeVertex.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace ptgl {
@@ -8,7 +9,8 @@ namespace ptgl {
 VertexSet PrimitiveShapeVertex::generateRoundedBox(const std::array<double, 3>& sides, double radius, int segments)
 {
     for (double side : sides) {
-        if (!std::isfinite(side) || side <= 0) throw std::invalid_argument("Rounded box sides must be positive and finite");
+        if (!std::isfinite(side) || side <= 0 || side > std::numeric_limits<float>::max() || float(side) == 0)
+            throw std::invalid_argument("Rounded box sides must be positive and representable as floats");
     }
     if (!std::isfinite(radius) || radius < 0 || radius > *std::min_element(sides.begin(), sides.end()) / 2
         || segments < 1 || segments > 64) {
@@ -59,6 +61,22 @@ VertexSet PrimitiveShapeVertex::generateRoundedBox(const std::array<double, 3>& 
                     else mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
                 }
             }
+        }
+    }
+    // Explicit flat-face/fillet boundaries for CAD mode. A face disappears when
+    // either in-plane core dimension reaches zero (capsule/sphere limit).
+    if (radius > 0) for (int axis = 0; axis < 3; ++axis) {
+        const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+        if (core[u] == 0 || core[v] == 0) continue;
+        for (int sign : {-1, 1}) {
+            const GLuint base = static_cast<GLuint>(mesh.vertices.size());
+            for (const auto& corner : {std::pair<int,int>{-1,-1}, {1,-1}, {1,1}, {-1,1}}) {
+                Eigen::Vector3d p = Eigen::Vector3d::Zero(), n = Eigen::Vector3d::Zero();
+                p[axis] = sign * half[axis]; p[u] = corner.first * core[u]; p[v] = corner.second * core[v];
+                n[axis] = sign;
+                mesh.vertices.emplace_back(float(p.x()), float(p.y()), float(p.z()), float(n.x()), float(n.y()), float(n.z()));
+            }
+            for (GLuint i = 0; i < 4; ++i) mesh.edges.insert(mesh.edges.end(), {base + i, base + (i + 1) % 4});
         }
     }
     return mesh;
