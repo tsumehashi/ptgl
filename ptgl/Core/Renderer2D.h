@@ -39,7 +39,7 @@ public:
     Renderer2D(GraphicsView* view);
     virtual ~Renderer2D();
 
-    virtual void initializeConfiguration();
+    virtual void initializeConfiguration(bool enablePicking = true);
     virtual void finalizeConfiguration(); // Requires the owning GL context.
 
     RenderState renderState() const { return renderState_; }

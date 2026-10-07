@@ -47,7 +47,7 @@ void Renderer2D::finalizeConfiguration()
     textOffsetCacheMap_.clear();
 }
 
-void Renderer2D::initializeConfiguration()
+void Renderer2D::initializeConfiguration(bool enablePicking)
 {
     // set nanovg
     renderNvgContext_ = nvgCreateGLES2(NVG_ANTIALIAS);
@@ -55,7 +55,7 @@ void Renderer2D::initializeConfiguration()
     nvgCreateFontMem(renderNvgContext_, fontName_.c_str(), Font::defaultFontData(), Font::defaultFontDataSize(), 0);
 
     // set picking nanovg
-    pickingNvgContext_ = nvgCreateGLES2(0);    // don't use ANTIALIAS
+    if (enablePicking) pickingNvgContext_ = nvgCreateGLES2(0);    // don't use ANTIALIAS
 }
 
 int Renderer2D::windowWidth() const

@@ -51,9 +51,12 @@ public:
     void setWindowSize(int width, int height);
     int width() const;
     int height() const;
+    float pixelRatio() const;
 
     void setFrameRate(int fps);
     int frameRate() const;
+    // Driver-dependent swap synchronization; GLFW supports 0 (off) and 1 (vsync).
+    void setSwapInterval(int interval);
 
     uint64_t currentFrame() const { return currentFrame_; }
 
@@ -106,7 +109,8 @@ public:
     bool loadGuiFont(const std::string &path) { return renderer2D_->loadFont(path); }
     void textInput(const std::string &text);
     void textComposition(const std::string &text, int cursor);
-    void cancelInput();
+    virtual void cancelInput();
+    virtual void mouseLeave();
     // Notify cached scene passes about geometry/visibility changes.
     virtual void notifySceneChanged() {}
 
@@ -149,6 +153,11 @@ public:
 
 protected:
     // for derived class
+
+    // GUI-only views reuse the window/input/2D lifecycle without scene passes.
+    virtual bool usesSceneRendering() const { return true; }
+    // Raw GPU content, after the background and before GUI; no NanoVG frame active.
+    virtual void renderContents() {}
 
     // execute initialize process
     virtual void initProcess() {}
@@ -253,7 +262,7 @@ protected:
     uint64_t currentFrame_ = 0;
 
     // time
-    decltype(std::chrono::system_clock::now()) startTimePoint_;
+    decltype(std::chrono::steady_clock::now()) startTimePoint_;
     double previousTime_ = 0.0;
     double currentTime_ = 0.0;
     double deltaTime_ = 0.0;

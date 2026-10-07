@@ -3,6 +3,124 @@ ptgl is a C++ graphics library for prototyping.
 
 ![screen_shot](https://raw.githubusercontent.com/wiki/tsumehashi/ptgl/images/readme/ScreenshotSimpleDemo.png "screen_shot")
 
+## Plot module
+
+Time-series, static XY/scatter and bounded XY trajectories are built into the
+single `ptgl` library. Include `ptgl/Plot/*.h` and use the `ptgl::plot` namespace,
+just like `ptgl::gui` for GUI controls. There are no separate plot/GUI/graphics
+libraries to link. The earlier experimental `ptgl::graphics` target is removed.
+Rebuild consumers of that target and link `ptgl` (or installed `ptgl::ptgl`).
+
+```cmake
+add_subdirectory(path/to/ptgl ptgl-build)
+target_link_libraries(my_app PRIVATE ptgl)
+```
+
+An installed SDK supports `find_package(Ptgl CONFIG REQUIRED)` followed by
+`target_link_libraries(my_app PRIVATE ptgl::ptgl)`. Eigen, OpenGL/GLEW and GLFW
+are transitive dependencies on native platforms; Emscripten uses its GLFW/GLEW
+ports and WebGL 2. Set `EIGEN_DIR`, `GLEW_INCLUDE_DIR`,
+`GLEW_SHARED_LIBRARY_RELEASE`, `GLFW_INCLUDE_DIR` and `GLFW_LIBRARY` if needed.
+Shared Windows builds produce one ptgl DLL, plus dependency DLLs such as GLEW.
+
+```cpp
+#include <ptgl/Plot/PlotGraphicsView.h>
+#include <ptgl/GUI/PushButton.h>
+#include <array>
+#include <cmath>
+
+int main() {
+    ptgl::plot::PlotGraphicsView view(2, 60000, 60);
+    view.setWindowTitle("Joint monitor");
+    view.setPlotMargins(0, 50, 0, 0); // Logical pixels reserved for controls.
+    auto& figure = view.figure();
+    auto& axes = figure.addAxes("Arm", "deg", {-180, 180});
+    axes.addSeries(0, "Shoulder").setLineWidth(3);
+    axes.addSeries(1, "Elbow");
+    figure.setLiveZoomEnabled(true);
+
+    auto pause = std::make_shared<ptgl::gui::PushButton>("Pause data");
+    pause->setPos(10, 10);
+    pause->setSize(140, 30);
+    pause->setCheckable(true);
+    pause->setOnToggledFunction([&figure](bool on) { figure.setSourcePaused(on); });
+    view.addWidget(pause); // Applies the default light GUI theme.
+
+    view.setUpdateFunction([time = 0.0](ptgl::plot::Figure& f, double dt) mutable {
+        time += dt;
+        // One row per display frame in this small example. For 1 kHz acquisition,
+        // drain an application-owned queue here; PlotMinimal shows 1 kHz synthesis.
+        f.append(time, std::array<float, 2>{float(80*std::sin(time)), float(50*std::cos(time))});
+    });
+    view.initialize();
+    view.execute();
+}
+```
+
+The default driver executes on the calling/main thread. A custom
+`GraphicsDriverPtr` can be passed as the first constructor argument. The view
+shares ptgl's 2D/GUI lifecycle and input routing; it skips 3D scene updates,
+3D shader initialization, transparency passes and GPU picking. Existing
+`GraphicsView`/`Graphics2DView` scene behavior is retained. GUI widgets use CPU
+hit tests and are drawn above the plot. Popups and tooltips remain available;
+`SceneEditorPanel` is specifically for a 3D scene.
+
+GUI controls receive mouse input first and retain drag capture. Keyboard focus
+suppresses plot shortcuts, even when a control ignores a key. Clicking the plot
+returns focus to plot interaction. Wheel zoom, Shift+wheel Y zoom, left-drag pan,
+legend visibility toggles, live zoom, thick antialiased lines, static XY/scatter
+and bounded trajectories use the existing plotting engine. Hotkeys are `L`
+(follow), `F` (live zoom), `R` (reset), `A` (fit), Space (pause callback), `+`/`-`
+(line width). White plot and GUI themes are the default.
+
+`Figure`, its axes/series, GUI widgets and the update callback run on one display
+thread. Producer threads should enqueue samples for the update callback; pausing
+the callback does not stop a device or producer. Keep acquisition buffers bounded
+and decide how to handle overrun or browser suspension in the application.
+
+`Figure` also supports direct rendering into an already-open frame with
+`PtglRenderer`, without creating a window. `show(std::move(figure), update)` in
+`ptgl/Plot/Viewer.h` is a convenience wrapper around `PlotGraphicsView`.
+The stream ring keeps at most the requested number of rows; trajectories each
+have their own capacity. No long-term recording is performed.
+
+Native `execute()` blocks with the default driver. Web `execute()` registers the
+browser callback and does not return; the JS exception mode used by this CMake
+build preserves the active stack. Keep the view and callback state alive until
+termination. GPU resources are released while the driver's GL context is valid.
+With background drivers, call `terminate()` and `waitUntilStopped()` before
+subclass members or captured state are destroyed. Do not wait from the rendering
+thread or the browser loop. `show()` retains its stopped Web viewer until another
+viewer replaces it or the runtime shuts down.
+
+Build and run examples:
+
+```sh
+cmake -S . -B build/plot -DBUILD_SHARED_LIBS=OFF -DPTGL_BUILD_PLOT_DEMO=ON -DPTGL_BUILD_PLOT_TESTS=ON
+cmake --build build/plot --config Release
+ctest --test-dir build/plot -C Release --output-on-failure
+# Windows / Visual Studio:
+./build/plot/examples/PlotDemo/Release/PlotGui.exe
+```
+
+The other executables are `PlotMinimal`, `PlotRealtime` (32 channels at 1 kHz,
+60-second ring), `PlotXy` and `PlotTrajectory`. They accept `--smoke-frames N`.
+For native GL/GUI/lifecycle regression tests, enable `PTGL_BUILD_PLOT_GL_TESTS`;
+these require a working display and OpenGL context. Enable
+`PTGL_BUILD_PLOT_BENCHMARK` for the CPU selection benchmark.
+
+```sh
+emcmake cmake -S . -B build/plot-web -DPTGL_BUILD_PLOT_DEMO=ON -DEIGEN_DIR=/path/to/eigen
+cmake --build build/plot-web -j
+python -m http.server 8080 --directory build/plot-web/examples/PlotDemo
+# Open http://localhost:8080/PlotGui.html
+```
+
+The browser examples resize the canvas backing buffer to CSS size times device
+pixel ratio. Plot margins/line widths use logical pixels; low-level pointer and
+renderer coordinates use framebuffer pixels. Size top-level GUI panels using
+`pixelRatio()` as in `examples/PlotDemo/Gui.cpp`.
+
 ## Installation
 ### Requirements
 * Ubuntu 18.04

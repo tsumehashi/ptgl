@@ -1,0 +1,10 @@
+foreach(example Minimal Realtime Xy Trajectory Gui)
+    add_executable(Plot${example} ${example}.cpp)
+    target_link_libraries(Plot${example} PRIVATE ptgl)
+    if(EMSCRIPTEN)
+        target_link_options(Plot${example} PRIVATE -sINITIAL_MEMORY=67108864
+            "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/WebShell.html")
+        set_target_properties(Plot${example} PROPERTIES SUFFIX .html)
+        set_property(TARGET Plot${example} APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/WebShell.html")
+    endif()
+endforeach()

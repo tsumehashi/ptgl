@@ -136,6 +136,11 @@ public:
 
     virtual void setWheelEvent(int x, int y, int delta, Orientation orientation = Vertical);
 
+    // Drivers set these after setWheelEvent; legacy callers get delta / 80 steps.
+    void setScrollSteps(double steps) { scrollSteps_ = steps; }
+    double scrollSteps() const { return scrollSteps_; }
+    void setModifierKey(int modifiers) { modifierKey_ = modifiers; }
+    int modifierKey() const { return modifierKey_; }
     Orientation orientation() const { return orientation_; }
     int delta() const { return delta_; }
     int x() const { return x_; }
@@ -146,6 +151,8 @@ protected:
     int y_ = 0;
     int delta_ = 0;
     Orientation orientation_ = Vertical;
+    double scrollSteps_ = 0;
+    int modifierKey_ = ModifierKey_None;
 };
 
 class PickingEvent : public Event

@@ -33,11 +33,13 @@ protected:
     virtual void setWindowSize(int width, int height) = 0;
     virtual void setWindowTitle(const std::string& title) = 0;
     virtual void setFrameRate(int fps) = 0;
+    virtual void setSwapInterval(int) {}
 
     virtual const std::string& windowTitle() const = 0;
     virtual int width() const = 0;
     virtual int height() const = 0;
     virtual int frameRate() const = 0;
+    virtual float pixelRatio() const { return 1.0f; }
     virtual std::string clipboardText() const { return {}; }
     virtual void setClipboardText(const std::string &) {}
     virtual bool hasTextInputEvents() const { return false; }

@@ -148,6 +148,8 @@ WheelEvent::~WheelEvent()
 void WheelEvent::setWheelEvent(int x, int y, int delta, Orientation orientation)
 {
     x_ = x, y_ = y, delta_ = delta, orientation_ = orientation;
+    scrollSteps_ = double(delta) / 80.0;
+    modifierKey_ = ModifierKey_None;
 }
 
 // PickingEvent

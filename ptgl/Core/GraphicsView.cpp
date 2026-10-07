@@ -57,7 +57,7 @@ GraphicsView::GraphicsView(std::unique_ptr<GraphicsDriver> driver)
     viewMode_ = ViewMode::NormalViewMode;
 
     // time
-    startTimePoint_ = std::chrono::system_clock::now();
+    startTimePoint_ = std::chrono::steady_clock::now();
     previousTime_ = getCurrentTime();
     currentTime_ = previousTime_;
     deltaTime_ = currentTime_ - previousTime_;
@@ -132,6 +132,8 @@ int GraphicsView::height() const
     return driver_->height();
 }
 
+float GraphicsView::pixelRatio() const { return driver_->pixelRatio(); }
+
 // FrameRate
 void GraphicsView::setFrameRate(int fps)
 {
@@ -142,6 +144,8 @@ int GraphicsView::frameRate() const
 {
     return driver_->frameRate();
 }
+
+void GraphicsView::setSwapInterval(int interval) { driver_->setSwapInterval(interval); }
 
 // Camera
 void GraphicsView::setCamera(CameraPtr camera)
@@ -280,20 +284,20 @@ void GraphicsView::setDefault2DShaderProgram(ShaderProgramPtr shaderProgram)
 void GraphicsView::executeInitializeEvent()
 {
     // initialize renderer
-    renderer3D_->initializeConfiguration();
-    renderer2D_->initializeConfiguration();
+    renderer2D_->initializeConfiguration(usesSceneRendering());
     textRenderer_->initializeConfiguration();
-
-    // load Shader
-    loadDefaultShader();
-    transparencyRenderer_->initialize();
+    if (usesSceneRendering()) {
+        renderer3D_->initializeConfiguration();
+        loadDefaultShader();
+        transparencyRenderer_->initialize();
+    }
 
     ///----------------
     glClearColor(backgroundColor_[0], backgroundColor_[1], backgroundColor_[2], backgroundColor_[3]);
 
     // GLES always uses shader point sizes/sprites and rejects these desktop caps.
     const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    if (glVersion && std::string(glVersion).compare(0, 9, "OpenGL ES") != 0) {
+    if (usesSceneRendering() && glVersion && std::string(glVersion).compare(0, 9, "OpenGL ES") != 0) {
         glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
         glEnable(GL_POINT_SPRITE);
     }
@@ -304,7 +308,7 @@ void GraphicsView::executeInitializeEvent()
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
-    camera_->initializeConfiguration();
+    if (usesSceneRendering()) camera_->initializeConfiguration();
 
     initProcess();
 
@@ -313,10 +317,11 @@ void GraphicsView::executeInitializeEvent()
 
 void GraphicsView::executeResizeEvent(int width, int height)
 {
-    double aspect = (double)width / (double)height;
     glViewport(0, 0, width, height);
-    camera_->setPerspective(perspectiveFovy_, aspect, perspectiveZnear_, perspectiveZfar_);
-    camera_->updateViewport();
+    if (usesSceneRendering() && width > 0 && height > 0) {
+        camera_->setPerspective(perspectiveFovy_, double(width) / height, perspectiveZnear_, perspectiveZfar_);
+        camera_->updateViewport();
+    }
 
     resizeEvent(width, height);
 }
@@ -339,12 +344,11 @@ void GraphicsView::executeFinalizeEvent()
 void GraphicsView::updateSceneState()
 {
     updateGui();
-    // update camera
-    camera()->updateViewport();
-    camera()->update();
-
-    // set camera
-    renderer3D_->setProjectionViewMatrix(camera_->projection()*camera_->modelview());
+    if (usesSceneRendering()) {
+        camera()->updateViewport();
+        camera()->update();
+        renderer3D_->setProjectionViewMatrix(camera_->projection()*camera_->modelview());
+    }
 
     // traverse GraphicsItem
     traversedItems_.clear();
@@ -356,6 +360,7 @@ void GraphicsView::updateSceneState()
 
 void GraphicsView::executeRenderEvent()
 {
+    if (width() <= 0 || height() <= 0) return;
     updateSceneState();
 
     // execute GraphicsItem prev process
@@ -366,16 +371,21 @@ void GraphicsView::executeRenderEvent()
     // Item callbacks can add/remove objects or alter the camera. Capture exactly
     // the scene that will be drawn, including those changes, in all cached passes.
     updateSceneState();
-    if (objectScene_) objectScene_->update();
-
-    executePrepareRenderScene(renderer3D_.get());
-
-    executePickingPass();
+    if (usesSceneRendering()) {
+        if (objectScene_) objectScene_->update();
+        executePrepareRenderScene(renderer3D_.get());
+        executePickingPass();
+    }
 
 #ifdef PTGL_DBG_PICKING
 #else    // PTGL_DBG_PICKING
 
     // ------- render scene --------
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glStencilMask(~0u);
+    glViewport(0, 0, width(), height());
     glClearColor(backgroundColor_[0], backgroundColor_[1], backgroundColor_[2], backgroundColor_[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
@@ -397,18 +407,16 @@ void GraphicsView::executeRenderEvent()
 
     executeRenderBackground2DScene(renderer2D_.get());
 
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
+    if (usesSceneRendering()) {
+        glEnable(GL_CULL_FACE);
+        glEnable(GL_DEPTH_TEST);
+        executeRenderScene(renderer3D_.get());
+        executeRenderScenePostProcess(renderer3D_.get());
+        glClear(GL_DEPTH_BUFFER_BIT);
+        executeRenderOverlayScene(renderer3D_.get());
+    }
 
-    // renderScene
-    executeRenderScene(renderer3D_.get());
-
-    // post renderScene
-    executeRenderScenePostProcess(renderer3D_.get());
-
-    // renderOverlayScene
-    glClear(GL_DEPTH_BUFFER_BIT);    // clear depth buffer
-    executeRenderOverlayScene(renderer3D_.get());
+    renderContents();
 
     // render2DScene
     glClear(GL_DEPTH_BUFFER_BIT);    // clear depth buffer
@@ -552,9 +560,7 @@ void GraphicsView::executePostProcess()
     postProcess();
 
     ++currentFrame_;
-    currentTime_ = getCurrentTime();
-    previousTime_ = currentTime_;
-    deltaTime_ = currentTime_ - previousTime_;
+    // Time is sampled at frame start so prevProcess sees this frame's interval.
 }
 
 // execute prev/post process (event)
@@ -849,9 +855,13 @@ void GraphicsView::executeMousePressEvent(MouseEvent* e)
         return;
     }
     guiPointerCaptured_ = false;
+    if (!usesSceneRendering()) {
+        pickedGraphicsItem_.reset();
+        setKeyboardFocus(nullptr);
+    }
     if (e->button() == MouseEvent::MouseButton::RightButton
      ||    e->button() == MouseEvent::MouseButton::MiddleButton) {
-        if (enableCameraManipulate_) {
+        if (usesSceneRendering() && enableCameraManipulate_) {
             camera_->mousePressEvent(e);
         }
     }
@@ -861,7 +871,7 @@ void GraphicsView::executeMousePressEvent(MouseEvent* e)
 
     // Input can arrive between rendered frames. Refresh at the press position
     // without advancing animations or emitting another frame.
-    if (initialized_ && e->button() == MouseEvent::MouseButton::LeftButton) {
+    if (usesSceneRendering() && initialized_ && e->button() == MouseEvent::MouseButton::LeftButton) {
         updateSceneState();
         executePickingPass();
     }
@@ -871,7 +881,7 @@ void GraphicsView::executeMousePressEvent(MouseEvent* e)
     // post event
     mousePressEvent(e);
 
-    if (e->button() == MouseEvent::MouseButton::LeftButton) {
+    if (usesSceneRendering() && e->button() == MouseEvent::MouseButton::LeftButton) {
         // handle picking up event
         executePickingUpEvent(pickingEvent_.get());
     }
@@ -890,7 +900,7 @@ void GraphicsView::executeMouseMoveEvent(MouseEvent* e)
     }
     if (e->button() == MouseEvent::MouseButton::RightButton
     ||    e->button() == MouseEvent::MouseButton::MiddleButton) {
-        if (enableCameraManipulate_) {
+        if (usesSceneRendering() && enableCameraManipulate_) {
             camera_->mouseMoveEvent(e);
         }
     }
@@ -898,6 +908,7 @@ void GraphicsView::executeMouseMoveEvent(MouseEvent* e)
     mouseX_ = e->x();
     mouseY_ = e->y();
 
+    if (!usesSceneRendering()) pickedGraphicsItem_.reset();
     executeGraphicsItemMouseMoveEvent(e);
 
     // post event
@@ -916,7 +927,7 @@ void GraphicsView::executeMouseReleaseEvent(MouseEvent* e)
     }
     if (e->button() == MouseEvent::MouseButton::RightButton ||
             e->button() == MouseEvent::MouseButton::MiddleButton) {
-        if (enableCameraManipulate_) {
+        if (usesSceneRendering() && enableCameraManipulate_) {
             camera_->mouseReleaseEvent(e);
         }
     }
@@ -953,7 +964,7 @@ void GraphicsView::executeWheelEvent(WheelEvent* e)
         item->wheelEvent(graphicsItemWheelEvent_.get());
     }
 
-    if (!graphicsItemWheelEvent_->isAccepted() && enableCameraManipulate_) {
+    if (!graphicsItemWheelEvent_->isAccepted() && usesSceneRendering() && enableCameraManipulate_) {
         camera_->wheelEvent(e);
     }
 
@@ -1287,7 +1298,7 @@ void GraphicsView::loadDefaultShader()
 // get time
 double GraphicsView::getCurrentTime()
 {
-    return std::chrono::duration<double>(std::chrono::system_clock::now() - startTimePoint_).count();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - startTimePoint_).count();
 }
 
 // ------- for GraphicsDriver ---------
@@ -1308,6 +1319,9 @@ void GraphicsView::executeGraphicsViewRenderEvent()
 
 void GraphicsView::executeGraphicsViewPrevProcessEvent()
 {
+    previousTime_ = currentTime_;
+    currentTime_ = getCurrentTime();
+    deltaTime_ = std::max(0.0, currentTime_ - previousTime_);
     commandQueue_->apply(*this);
     executePrevProcess();
 }

@@ -1,85 +1,92 @@
-cmake_minimum_required(VERSION 3.13)
-project(ptgl C CXX)
+cmake_minimum_required(VERSION 3.16)
+project(ptgl VERSION 0.2.0 LANGUAGES C CXX)
 
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 option(PTGL_BUILD_PLASTIC_DEMO "Build the plastic/CAD/legacy rendering comparison" OFF)
 option(PTGL_BUILD_EMSCRIPTEN_DEMO "Build the simple browser sample" OFF)
 option(PTGL_BUILD_THREADED_DEMO "Build the multiple-producer drawing sample" OFF)
+option(PTGL_BUILD_PLOT_DEMO "Build the plotting examples" OFF)
+option(PTGL_BUILD_PLOT_TESTS "Build plot data, geometry and GUI interaction tests" OFF)
+option(PTGL_BUILD_PLOT_GL_TESTS "Build plot tests requiring a display/GL context" OFF)
+option(PTGL_BUILD_PLOT_BENCHMARK "Build the plotting CPU benchmark" OFF)
 option(PTGL_ENABLE_WEB_THREADS "Enable Emscripten pthreads (requires COOP/COEP headers)" OFF)
-set(EIGEN_DIR /usr/include/eigen3 CACHE STRING "The directory of the Eigen library")
+set(EIGEN_DIR /usr/include/eigen3 CACHE PATH "Directory containing Eigen/Core")
+include(cmake/PtglDependencies.cmake)
 
-if(NOT EMSCRIPTEN)
-    find_package(Threads REQUIRED)
-    find_package(OpenGL REQUIRED)
-    find_package(GLEW REQUIRED)
-endif()
-
-file(GLOB_RECURSE PTGL_LIB_INC RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/ptgl/*.h)
-file(GLOB_RECURSE PTGL_LIB_SRC ${PROJECT_SOURCE_DIR}/ptgl/*.cpp)
-
-# thirdparty
+file(GLOB_RECURSE PTGL_LIB_INC CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/ptgl/*.h)
+file(GLOB_RECURSE PTGL_LIB_SRC CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/ptgl/*.cpp)
 set(PTGL_THIRDPARTY_SRC
     ${PROJECT_SOURCE_DIR}/thirdparty/Core/nanovg/src/nanovg.c
-    ${PROJECT_SOURCE_DIR}/thirdparty/Loader/STL/stl_parser/parse_stl.cpp
-)
-
+    ${PROJECT_SOURCE_DIR}/thirdparty/Loader/STL/stl_parser/parse_stl.cpp)
 if(EMSCRIPTEN)
     set(PTGL_LIBRARY_TYPE STATIC)
 endif()
-add_library(ptgl ${PTGL_LIBRARY_TYPE}
-    ${PTGL_LIB_SRC}
-    ${PTGL_THIRDPARTY_SRC}
-)
-
+add_library(ptgl ${PTGL_LIBRARY_TYPE} ${PTGL_LIB_SRC} ${PTGL_THIRDPARTY_SRC})
+add_library(ptgl::ptgl ALIAS ptgl)
 target_compile_features(ptgl PUBLIC cxx_std_17)
-target_include_directories(ptgl PUBLIC ${EIGEN_DIR} ${PROJECT_SOURCE_DIR})
+target_include_directories(ptgl PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}> $<INSTALL_INTERFACE:include>)
+target_link_libraries(ptgl PUBLIC Eigen3::Eigen ${PTGL_GLFW_TARGET})
 if(EMSCRIPTEN)
-    # JS exceptions preserve stack objects when execute()/glutMainLoop yields
-    # via Emscripten's simulated infinite loop; Wasm exceptions unwind them.
+    # JS exceptions keep main's stack alive while a browser loop is registered.
     target_compile_options(ptgl PUBLIC -fexceptions)
     target_link_libraries(ptgl PUBLIC GLEW)
     target_link_options(ptgl PUBLIC -fexceptions -sDISABLE_EXCEPTION_CATCHING=0
-        -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+        -sUSE_GLFW=3 -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
         -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1048576)
     if(PTGL_ENABLE_WEB_THREADS)
         target_compile_options(ptgl PUBLIC -pthread)
         target_link_options(ptgl PUBLIC -pthread -sPTHREAD_POOL_SIZE=4)
     endif()
 else()
-    target_link_libraries(ptgl PUBLIC OpenGL::GL GLEW::GLEW Threads::Threads)
+    target_link_libraries(ptgl PUBLIC Threads::Threads OpenGL::GL GLEW::GLEW)
+    target_compile_definitions(ptgl PUBLIC PTGL_DISABLE_GLES)
 endif()
 if(WIN32)
-    target_link_libraries(ptgl PUBLIC imm32)
+    target_link_libraries(ptgl PUBLIC imm32 user32 gdi32 shell32)
 endif()
-
 if(MSVC)
     target_compile_definitions(ptgl PUBLIC _USE_MATH_DEFINES NOMINMAX)
     target_compile_definitions(ptgl PRIVATE _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(ptgl PRIVATE /W3 /utf-8)
+    target_compile_options(ptgl PUBLIC /EHsc PRIVATE /W3 /utf-8)
     set_target_properties(ptgl PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 else()
     target_compile_options(ptgl PRIVATE -Wall)
 endif()
 
-# install
-install(TARGETS ptgl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
-
+include(CMakePackageConfigHelpers)
+configure_package_config_file(cmake/PtglConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/PtglConfig.cmake" INSTALL_DESTINATION lib/cmake/Ptgl)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/PtglConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(TARGETS ptgl EXPORT PtglTargets ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
+install(EXPORT PtglTargets FILE PtglTargets.cmake NAMESPACE ptgl:: DESTINATION lib/cmake/Ptgl)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/PtglConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/PtglConfigVersion.cmake" cmake/PtglDependencies.cmake
+    DESTINATION lib/cmake/Ptgl)
 foreach(file ${PTGL_LIB_INC})
     get_filename_component(dir ${file} DIRECTORY)
     install(FILES ${file} DESTINATION include/${dir})
 endforeach()
+install(DIRECTORY thirdparty/ DESTINATION include/thirdparty FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 
 if(PTGL_BUILD_PLASTIC_DEMO)
     add_subdirectory(examples/PlasticDemo)
 endif()
-
 if(PTGL_BUILD_EMSCRIPTEN_DEMO)
     add_subdirectory(examples/SimpleEmscriptenDemo)
 endif()
-
 if(PTGL_BUILD_THREADED_DEMO)
     add_subdirectory(examples/ThreadedDemo)
 endif()
-
-
-
+if(PTGL_BUILD_PLOT_DEMO)
+    add_subdirectory(examples/PlotDemo)
+endif()
+if(PTGL_BUILD_PLOT_TESTS OR PTGL_BUILD_PLOT_GL_TESTS)
+    enable_testing()
+    add_subdirectory(tests/Plot)
+endif()
+if(PTGL_BUILD_PLOT_BENCHMARK)
+    add_executable(PlotBenchmark benchmarks/Plot/StreamBenchmark.cpp)
+    target_link_libraries(PlotBenchmark PRIVATE ptgl)
+endif()

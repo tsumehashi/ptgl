@@ -112,6 +112,15 @@ void GraphicsView::textComposition(const std::string &t, int cursor)
     if (auto p = focusedGraphicsItem_)
         p->textCompositionEvent(t, cursor);
 }
+void GraphicsView::mouseLeave()
+{
+    mouseX_ = mouseY_ = -1;
+    if (hoveredGraphicsItem_) {
+        hoveredGraphicsItem_->setHoverd(false);
+        hoveredGraphicsItem_->hoverLeaveEvent(graphicsItemHoverEvent_.get());
+        hoveredGraphicsItem_.reset();
+    }
+}
 void GraphicsView::cancelInput()
 {
     cancelGraphicsItemDrag();
