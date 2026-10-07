@@ -1,9 +1,6 @@
 #include "ptgl/Core/QuickGraphicsView.h"
 #include "ptgl/Driver/EMGLUTGraphicsDriver.h"
 #include "ptgl/Handle/TransformHandle.h"
-#ifdef EMSCRIPTEN
-#include <emscripten.h>
-#endif  // EMSCRIPTEN
 
 int main(int argc, char* argv[])
 {
@@ -31,12 +28,11 @@ int main(int argc, char* argv[])
     view.initialize();
     view.execute();
 
-#ifdef EMSCRIPTEN
-#else   // EMSCRIPTEN
+#ifndef __EMSCRIPTEN__
     while (!view.terminated()) {
 
     }
-#endif  // EMSCRIPTEN
+#endif
 
     return 0;
 }

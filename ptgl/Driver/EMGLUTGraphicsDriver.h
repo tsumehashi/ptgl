@@ -114,7 +114,12 @@ void EMGLUTGraphicsDriver::execute()
 {
     // init glut
     glutInitWindowSize(width_ , height_);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH | GLUT_MULTISAMPLE);
+    // Picking uses the default framebuffer; WebGL cannot toggle its MSAA.
+    unsigned int displayMode = GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH;
+#ifndef __EMSCRIPTEN__
+    displayMode |= GLUT_MULTISAMPLE;
+#endif
+    glutInitDisplayMode(displayMode);
     glutCreateWindow(windowTitle_.c_str());
 
     glutReshapeFunc(EMGLUTGraphicsDriver::glutResizeEvent);

@@ -11,7 +11,11 @@ StyledGraphicsView::StyledGraphicsView(GraphicsDriverPtr driver) : GraphicsView(
     renderer3D_ = detail::makeSceneStyleRenderer(this);
 }
 
-StyledGraphicsView::~StyledGraphicsView() = default;
+StyledGraphicsView::~StyledGraphicsView()
+{
+    terminate();
+    waitUntilStopped();
+}
 
 void StyledGraphicsView::setRenderStyle(RenderStyle style)
 {

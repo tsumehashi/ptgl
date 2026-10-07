@@ -136,7 +136,7 @@ double calcPlanePointPerpendicular(Eigen::Vector3d& perpendicularPos, const Eige
     double c = planeNorm(2);
     double d = -a*planePos(0) -b*planePos(1) - c*planePos(2);
     double k = - (a*p(0) + b*p(1) + c*p(2) + d)/(a*a + b*b + c*c);
-    double l = std::abs<double>(a*p(0) + b*p(1) + c*p(2) + d)/(a*a + b*b + c*c);    // the length of the perpendicular line
+    double l = std::abs(a*p(0) + b*p(1) + c*p(2) + d)/(a*a + b*b + c*c);    // the length of the perpendicular line
     perpendicularPos = Eigen::Vector3d(p(0) + k*a, p(1) + k*b, p(2) + k*c);    // the intersection of the plane and perpendicular
 
     return l;

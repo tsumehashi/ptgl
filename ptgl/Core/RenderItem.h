@@ -13,6 +13,10 @@ class Render3DItem {
 public:
     Render3DItem();
     virtual ~Render3DItem();
+    Render3DItem(const Render3DItem&) = default;
+    Render3DItem& operator=(const Render3DItem&) = default;
+    Render3DItem(Render3DItem&&) noexcept = default;
+    Render3DItem& operator=(Render3DItem&&) noexcept = default;
 
     // Light
     void setEffectLight(double e);
@@ -80,14 +84,17 @@ public:
     void deserialize(const std::vector<uint8_t>& data);
 
     void clear();
+    std::size_t byteSize() const { return data_.size(); }
+    // Checks command boundaries and a balanced transform stack, without GL.
+    bool valid() const;
 
     // render
-    void render(Renderer3D* r);
+    void render(Renderer3D* r) const;
 
 private:
-    int getItemType(uint8_t* ptr) const;
+    int getItemType(const uint8_t* ptr) const;
     int getItemSize(int itemType) const;
-    void renderSub(Renderer3D* r, uint8_t* ptr, int itemType);
+    void renderSub(Renderer3D* r, const uint8_t* ptr, int itemType) const;
 
     enum ItemType {
         EffectLightItemType = 0,

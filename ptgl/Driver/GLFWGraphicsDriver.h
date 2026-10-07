@@ -9,11 +9,15 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <stdexcept>
 #include "ptgl/Core/GraphicsDriver.h"
 #include "ptgl/Core/GraphicsView.h"
 #include "ptgl/Core/Event.h"
 #include "ptgl/Core/GLPath.h"
 #include <GLFW/glfw3.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -24,7 +28,9 @@ namespace ptgl {
 
 class GLFWGraphicsDriver : public GraphicsDriver {
 public:
-    GLFWGraphicsDriver();
+    enum class ExecutionMode { BackgroundThread, CallingThread };
+    // CallingThread keeps GLFW window/event operations on the application's main thread.
+    explicit GLFWGraphicsDriver(ExecutionMode mode = ExecutionMode::BackgroundThread);
     virtual ~GLFWGraphicsDriver();
 
     static void setEnableInitializeGLFW(bool enable);   // default is enable
@@ -37,6 +43,7 @@ protected:
     virtual void initialize(GraphicsView* view) override;
     virtual void execute() override;
     virtual void terminate() override;
+    void waitUntilStopped() override;
 
     virtual bool terminated() override;
 
@@ -102,6 +109,9 @@ protected:
     void resizeGL(int x, int y);
 
     void handleEvents();
+    bool initializeWindow();
+    void renderFrame();
+    void finalizeWindow();
 
     GLFWwindow* glfwWindow_ = nullptr;
 
@@ -124,12 +134,14 @@ protected:
     static inline std::once_flag init_once_flag_;
     static inline std::atomic<int> terminateCount_ = 0;
     static inline std::mutex staticMutex_;
-    static inline std::atomic<bool> terminated_ = false;
+    std::atomic<bool> terminated_{true};
+    std::atomic<bool> closeRequested_{false};
+    ExecutionMode executionMode_;
 
     std::unique_ptr<std::thread> thread_;
 };
 
-GLFWGraphicsDriver::GLFWGraphicsDriver()
+GLFWGraphicsDriver::GLFWGraphicsDriver(ExecutionMode mode) : executionMode_(mode)
 {
     width_ = 640;
     height_ = 480;
@@ -152,13 +164,7 @@ GLFWGraphicsDriver::~GLFWGraphicsDriver()
 {
     terminate();
 
-    try {
-        if (thread_ && thread_->joinable()) {
-            thread_->join();
-        }
-    } catch (...) {
-
-    }
+    waitUntilStopped();
 
     if (glfwWindow_) {
         glfwDestroyWindow(glfwWindow_);
@@ -217,7 +223,7 @@ void GLFWGraphicsDriver::initialize(ptgl::GraphicsView* view)
 
     std::call_once(init_once_flag_, [&](){
         if (enableInitializeGLFW_.load()) {
-            std::cerr << "glfwInit" << std::endl;
+            std::cout << "glfwInit" << std::endl;
             glfwInit();
         }
     });
@@ -225,145 +231,198 @@ void GLFWGraphicsDriver::initialize(ptgl::GraphicsView* view)
     GraphicsDriver::initialize(view);
 }
 
+bool GLFWGraphicsDriver::initializeWindow()
+{
+#ifdef __EMSCRIPTEN__
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#elif !defined(PTGL_DISABLE_GLES)
+    // set OpenGL ES 2.0
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#endif    // PTGL_DISABLE_GLES
+
+#ifdef __EMSCRIPTEN__
+    // WebGL cannot disable MSAA for the ID/depth passes on the default buffer.
+    glfwWindowHint(GLFW_SAMPLES, 0);
+#else
+    glfwWindowHint(GLFW_SAMPLES, 4);
+#endif
+
+    glfwWindow_ = glfwCreateWindow(windowWidth_, windowHeight_, windowTitle_.c_str(), NULL, NULL);
+
+    if (!glfwWindow_) {
+        std::cerr << "Could not create the graphics window/context." << std::endl;
+        terminated_ = true;
+        return false;
+    }
+    terminated_ = false;
+    glfwMakeContextCurrent(glfwWindow_);
+    glfwSwapInterval(0);
+
+    // init GLEW
+    if(glewInit() != GLEW_OK) {
+        std::cerr << "Could not init glew." << std::endl;
+//            return;
+    }
+
+    // print out some info about the graphics drivers
+    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    std::cout << "Vendor: " << glGetString(GL_VENDOR) << std::endl;
+    std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
+
+    // set this pointer
+    glfwSetWindowUserPointer(glfwWindow_, this);
+#ifdef _WIN32
+    ime_ = std::make_unique<detail::WindowsIme>(
+        glfwGetWin32Window(glfwWindow_),
+        [this](std::string text) {
+            events_.push_back([this, text] { graphicsView()->textInput(text); });
+        },
+        [this](std::string text, int cursor) {
+            events_.push_back([this, text, cursor] { graphicsView()->textComposition(text, cursor); });
+        });
+#endif
+
+    // set callback
+    glfwSetMouseButtonCallback(glfwWindow_, mouseButtonEvent);
+    glfwSetCursorEnterCallback(glfwWindow_, cursorEnterEvent);
+    glfwSetCursorPosCallback(glfwWindow_, cursorPosEvent);
+    glfwSetScrollCallback(glfwWindow_, scrollEvent);
+    glfwSetKeyCallback(glfwWindow_, keyEvent);
+    glfwSetCharCallback(glfwWindow_, characterEvent);
+    glfwSetWindowFocusCallback(glfwWindow_, focusEvent);
+    glfwSetDropCallback(glfwWindow_, dropEvent);
+
+    glfwSetFramebufferSizeCallback(glfwWindow_, resizeEvent);
+
+    glfwGetFramebufferSize(glfwWindow_, &width_, &height_);
+    resizeGL(width_, height_);
+
+    return true;
+}
+
+void GLFWGraphicsDriver::renderFrame()
+{
+    // execute prev process
+    executeGraphicsViewPrevProcessEvent();
+
+    // execute prev event process
+    executeGraphicsViewPrevEventProcessEvent();
+
+    // handle events
+    handleEvents();
+
+    // execute prev event process
+    executeGraphicsViewPostEventProcessEvent();
+
+    // render
+    executeGraphicsViewRenderEvent();
+
+    // execute post process
+    executeGraphicsViewPostProcessEvent();
+
+    // swap front and back buffers
+    glfwSwapBuffers(glfwWindow_);
+
+    // poll for and process events
+    glfwPollEvents();
+
+}
+
+void GLFWGraphicsDriver::finalizeWindow()
+{
+    executeGraphicsViewFinalizeEvent();
+#ifdef _WIN32
+    ime_.reset();
+#endif
+    glfwDestroyWindow(glfwWindow_);
+    glfwWindow_ = nullptr;
+    terminated_ = true;
+}
+
 void GLFWGraphicsDriver::execute()
 {
     if (!graphicsView()) return;
-
-    std::unique_lock<std::mutex> lock(staticMutex_);
-
-    // if not exec initializ glfwInit
-    std::call_once(init_once_flag_, [&](){
-        if (enableInitializeGLFW_.load()) {
-            std::cerr << "glfwInit" << std::endl;
-            glfwInit();
-        }
+    if (!terminated_.load()) throw std::logic_error("The view is already executing");
+    waitUntilStopped();
+    closeRequested_ = false;
+    terminated_ = false;
+    std::call_once(init_once_flag_, [&]() {
+        if (enableInitializeGLFW_.load()) glfwInit();
     });
-
-    std::atomic<bool> waitInitEnd(true);
-
-    thread_ = std::move(std::unique_ptr<std::thread>(new std::thread([&](){
-
-#ifndef PTGL_DISABLE_GLES
-        // set OpenGL ES 2.0
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#endif    // PTGL_DISABLE_GLES
-
-        glfwWindowHint(GLFW_SAMPLES, 4);
-
-        glfwWindow_ = glfwCreateWindow(windowWidth_, windowHeight_, windowTitle_.c_str(), NULL, NULL);
-
-        glfwMakeContextCurrent(glfwWindow_);
-        glfwSwapInterval(0);
-
-        // init GLEW
-        if(glewInit() != GLEW_OK) {
-            std::cerr << "Could not init glew." << std::endl;
-//            return;
+#ifdef __EMSCRIPTEN__
+    if (!initializeWindow()) return;
+    executeGraphicsViewInitializeEvent();
+    // The browser owns the event loop. Keep main's stack/captures alive (JS EH).
+    emscripten_set_main_loop_arg([](void* arg) {
+        auto driver = static_cast<GLFWGraphicsDriver*>(arg);
+        if (driver->closeRequested_.load() || glfwWindowShouldClose(driver->glfwWindow_)) {
+            emscripten_cancel_main_loop();
+            driver->finalizeWindow();
+            return;
         }
-
-        // print out some info about the graphics drivers
-        std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
-        std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-        std::cout << "Vendor: " << glGetString(GL_VENDOR) << std::endl;
-        std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
-
-        // set this pointer
-        glfwSetWindowUserPointer(glfwWindow_, this);
-#ifdef _WIN32
-        ime_ = std::make_unique<detail::WindowsIme>(
-            glfwGetWin32Window(glfwWindow_),
-            [this](std::string text) {
-                events_.push_back([this, text] { graphicsView()->textInput(text); });
-            },
-            [this](std::string text, int cursor) {
-                events_.push_back([this, text, cursor] { graphicsView()->textComposition(text, cursor); });
-            });
-#endif
-
-        // set callback
-        glfwSetMouseButtonCallback(glfwWindow_, mouseButtonEvent);
-        glfwSetCursorEnterCallback(glfwWindow_, cursorEnterEvent);
-        glfwSetCursorPosCallback(glfwWindow_, cursorPosEvent);
-        glfwSetScrollCallback(glfwWindow_, scrollEvent);
-        glfwSetKeyCallback(glfwWindow_, keyEvent);
-        glfwSetCharCallback(glfwWindow_, characterEvent);
-        glfwSetWindowFocusCallback(glfwWindow_, focusEvent);
-        glfwSetDropCallback(glfwWindow_, dropEvent);
-
-        glfwSetFramebufferSizeCallback(glfwWindow_, resizeEvent);
-
-        // finish initialize
-        waitInitEnd = false;
-
-        glfwGetFramebufferSize(glfwWindow_, &width_, &height_);
-        resizeGL(width_, height_);
-
-        executeGraphicsViewInitializeEvent();
-
-        while (!glfwWindowShouldClose(glfwWindow_)) {
-
-            auto current_time = std::chrono::system_clock::now();
-
-            // execute prev process
-            executeGraphicsViewPrevProcessEvent();
-
-            // execute prev event process
-            executeGraphicsViewPrevEventProcessEvent();
-
-            // handle events
-            handleEvents();
-
-            // execute prev event process
-            executeGraphicsViewPostEventProcessEvent();
-
-            // render
-            executeGraphicsViewRenderEvent();
-
-            // execute post process
-            executeGraphicsViewPostProcessEvent();
-
-            // swap front and back buffers
-            glfwSwapBuffers(glfwWindow_);
-
-            // poll for and process events
-            glfwPollEvents();
-
-            // fps
-            if (frameRate() > 0) {
-                int64_t msTimeStep = std::round(1000.0 / frameRate());
-                auto sleep_time = current_time + std::chrono::milliseconds(msTimeStep);
-                std::this_thread::sleep_until(sleep_time);
+        driver->renderFrame();
+    }, this, frameRate() == 60 ? 0 : std::max(0, frameRate()), true);
+#else
+    auto run = [this](std::atomic<bool>* ready) {
+        bool initialized = false;
+        try {
+            initialized = initializeWindow();
+            if (ready) *ready = true;
+            if (!initialized) return;
+            executeGraphicsViewInitializeEvent();
+            while (!closeRequested_.load() && !glfwWindowShouldClose(glfwWindow_)) {
+                auto currentTime = std::chrono::steady_clock::now();
+                renderFrame();
+                if (frameRate() > 0) {
+                    auto step = std::chrono::milliseconds(int64_t(std::round(1000.0 / frameRate())));
+                    std::this_thread::sleep_until(currentTime + step);
+                }
             }
+        } catch (const std::exception& e) {
+            std::cerr << "Graphics loop failed: " << e.what() << '\n';
+        } catch (...) {
+            std::cerr << "Graphics loop failed\n";
         }
-
-        executeGraphicsViewFinalizeEvent();
-#ifdef _WIN32
-        ime_.reset();
+        if (glfwWindow_) finalizeWindow();
+        else terminated_ = true;
+        // Do not touch ready again after publishing initialization completion.
+    };
+    if (executionMode_ == ExecutionMode::CallingThread) {
+        run(nullptr);
+    } else {
+        std::atomic<bool> ready{false};
+        try {
+            thread_ = std::make_unique<std::thread>([run, &ready] { run(&ready); });
+        } catch (...) { terminated_ = true; throw; }
+        while (!ready.load() && !terminated_.load()) std::this_thread::yield();
+    }
 #endif
-        glfwDestroyWindow(glfwWindow_);
-        glfwWindow_ = nullptr;
-        terminated_ = true;
-    })));
+}
 
-    // wait for GLFW initialized
-    while (waitInitEnd.load()) {
-        ;    // wait
+void GLFWGraphicsDriver::terminate()
+{
+    // Never touch GLFWwindow from a producer/control thread.
+    closeRequested_ = true;
+}
+
+void GLFWGraphicsDriver::waitUntilStopped()
+{
+    if (thread_ && thread_->joinable()) {
+        if (thread_->get_id() == std::this_thread::get_id())
+            throw std::logic_error("Cannot wait for the rendering thread from itself");
+        thread_->join();
+    } else if (!terminated_.load()) {
+        throw std::logic_error("Cannot wait while the calling-thread/browser loop is running");
     }
 }
 
-void GLFWGraphicsDriver::terminate() {
-    std::unique_lock<std::mutex> lock(staticMutex_);
-    if (glfwWindow_) {
-        glfwSetWindowShouldClose(glfwWindow_, GL_TRUE);
-    }
-}
-
-bool GLFWGraphicsDriver::terminated() {
-    return !glfwWindow_ || terminated_.load();
-}
+bool GLFWGraphicsDriver::terminated() { return terminated_.load(); }
 
 void GLFWGraphicsDriver::resizeGL(int x, int y) {
     width_ = x;
@@ -542,7 +601,8 @@ Key GLFWGraphicsDriver::keymap(int key, int scancode)
     // override GLFW key tokens with a fixed X11/JIS scancode table. Resolve
     // punctuation using the active layout so the keys labelled [ and ] also
     // work on JIS keyboards, where their physical positions differ from US.
-#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 2)
+    // Emscripten's built-in GLFW aborts on glfwGetKeyName; use its key tokens.
+#if !defined(__EMSCRIPTEN__) && (GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 2))
     if ((key >= GLFW_KEY_SPACE && key <= GLFW_KEY_WORLD_2) || key == GLFW_KEY_UNKNOWN) {
         const char* name = glfwGetKeyName(key, scancode);
         if (name && name[0] && name[1] == '\0') {

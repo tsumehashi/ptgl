@@ -7,7 +7,7 @@ ptgl is a C++ graphics library for prototyping.
 ### Requirements
 * Ubuntu 18.04
 * C++17 compiler and standard library with `std::filesystem` support (GCC 9+ on Ubuntu)
-* CMake 3.10 or later
+* CMake 3.13 or later
 
 ### Install dependencies
 ~~~
@@ -128,8 +128,8 @@ scene objects. No ray tracing or environment-image loading is required.
 The shadow pass uses the existing compatibility shader API with GLES precision
 qualifiers and no extra texture formats or GL extensions.
 Rendering and switching were checked on an NVIDIA RTX A4000 with
-desktop OpenGL 4.6 and native OpenGL ES 3.2; WebGL/Emscripten and GLES 2.0-only
-devices still need platform validation. A shader compilation
+desktop OpenGL 4.6 and native OpenGL ES 3.2, and in Chrome with WebGL 2 via
+Emscripten. GLES 2.0-only devices still need platform validation. A shader compilation
 failure is logged and falls back to legacy rendering; query
 `plasticRenderingAvailable()` after initialization to check availability.
 Applications should leave framebuffer sRGB conversion disabled because the
@@ -177,6 +177,185 @@ If GLFW is not discovered automatically, set `GLFW_INCLUDE_DIR` and
 `GLFW_LIBRARY`. Windows shared builds also need the ptgl, GLEW and GLFW DLL
 directories on `PATH`. The example selects desktop OpenGL through the existing
 `PTGL_DISABLE_GLES` driver option.
+
+### Browser samples (Emscripten / WebGL 2)
+
+Install and activate the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html),
+then load its environment in your terminal (`emsdk_env.bat` in Windows Command
+Prompt, `./emsdk_env.ps1` in PowerShell, or `source ./emsdk_env.sh` on Linux/macOS).
+Install CMake, Ninja and Eigen; `EIGEN_DIR` must be the directory containing `Eigen/`.
+Build both samples from the project root:
+
+```sh
+emcmake cmake -S . -B build/emscripten -G Ninja -DCMAKE_BUILD_TYPE=Release -DEIGEN_DIR="<Eigen include directory>" -DPTGL_BUILD_PLASTIC_DEMO=ON -DPTGL_BUILD_EMSCRIPTEN_DEMO=ON
+cmake --build build/emscripten --parallel
+python -m http.server 8000 --bind 127.0.0.1 --directory build/emscripten
+```
+
+Open either sample in a WebGL 2 browser:
+
+* [PlasticDemo](http://localhost:8000/examples/PlasticDemo/PlasticDemo.html): Plastic,
+  CAD and Legacy rendering, with the scene editor.
+* [SimpleEmscriptenDemo](http://localhost:8000/examples/SimpleEmscriptenDemo/SimpleEmscriptenDemo.html):
+  the existing GLUT sample with a transform handle.
+
+Serve the generated `.html`, `.js` and `.wasm` files together over HTTP; opening
+the HTML directly as a local file does not work. The Web build uses a static
+`ptgl` library and Emscripten's bundled GLFW/GLUT/GLEW compatibility libraries;
+desktop OpenGL, GLFW and GLEW installations are unnecessary.
+Both samples were built with Emscripten 6.0.11 and checked in headless Chrome 154
+using its WebGL 2 SwiftShader backend. PlasticDemo's style switching, selection,
+edge/shadow toggles, object addition/removal and OBJ drop import were exercised.
+
+`GLFWGraphicsDriver::execute()` runs on the browser's main thread and yields to
+its event loop without returning to the caller. Put ongoing work in the view's
+callbacks, not in a polling loop after `execute()`. CMake enables JavaScript-based
+C++ exceptions to preserve stack-owned views and callback captures across this
+yield; do not override this with `-fwasm-exceptions` (see Emscripten's
+[main-loop lifetime restriction](https://emscripten.org/docs/api_reference/emscripten.h.html#c.emscripten_set_main_loop)).
+
+Browser differences:
+
+* GPU timer statistics are unavailable; CPU timings remain available.
+* Default-framebuffer MSAA is disabled because WebGL cannot toggle it for the
+  picking/depth passes. Object and handle selection use the same passes as desktop.
+* Drop STL/OBJ files onto the canvas to import them. Paths in the editor refer
+  to Emscripten's virtual filesystem, not your computer's filesystem.
+* Native clipboard integration and IME composition are unavailable with the
+  bundled GLFW backend. Non-ASCII GUI text also needs a suitable font packaged
+  into the virtual filesystem and loaded with `loadGuiFont()`.
+
+### Drawing from worker threads
+
+`GraphicsView::commandSender()` returns a copyable `RenderCommandSender` that
+multiple worker threads can share. Each worker builds its own `Render3DItem`
+without an OpenGL context, then submits a value copy or moves the recording:
+
+```cpp
+// Obtain on the controlling thread while the view is alive.
+auto sender = view.commandSender();
+
+// Run this code on a worker; other workers use their own layer IDs.
+ptgl::Render3DItem commands;
+commands.setColor(0.2, 0.6, 0.9);
+const double position[] = {1, 2, 0.8};
+const double rotation[] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+commands.drawSphere(position, rotation, 0.8);
+auto result = sender.submitFrame("robot", std::move(commands));
+if (result == ptgl::SubmitResult::Closed) {
+    // Stop producing: the view has ended.
+}
+```
+
+Do not mutate the same recording from multiple threads. A submitted copy is
+independent of its source; a moved recording transfers its storage. `render()`
+is now const and recording does not call OpenGL. Shape construction/GPU uploads
+still occur on the rendering thread when commands are replayed.
+
+| Method | Behavior |
+| --- | --- |
+| `submitFrame(id, commands)` | Retain the latest accepted drawing for this ID. Replace older updates that have not reached a frame yet. Different IDs coexist. |
+| `clearFrame(id)` | Remove this ID at the next frame boundary. Clearing an absent ID succeeds. |
+| `post(task)` | Execute an operation once on the view thread, in queue acceptance order. |
+| `isOpen()` | Check whether the endpoint is accepting work; the subsequent submission still needs its result checked. |
+
+`SubmitResult` is `Accepted`, `Closed`, `QueueFull`, `TooLarge` or
+`InvalidArgument`. Acceptance does not acknowledge execution or screen display.
+The first frame can receive commands posted before `execute()`. Each subsequent
+frame takes one snapshot before view callbacks, input processing and rendering.
+All shadow, depth, color and CAD edge passes use the same snapshot; updates sent
+while a frame is rendering wait for a later frame. Posted operations are applied
+first, followed by the captured layer updates. There is no combined FIFO order
+between these two kinds of work. A task that submits more work defers it until a
+later frame. No user task executes while the queue mutex is held.
+
+Layers preserve their drawing until replaced or cleared, with isolated color,
+material, line/point state and coordinate transforms. They use the existing
+Plastic/CAD/Legacy scene pipeline and invalidate cached edges when changed.
+Layers are non-pickable drawing batches. For individually selectable objects and
+TransformHandles, use `ObjectScene` through `post()`:
+
+```cpp
+sender.post([](ptgl::GraphicsView& view) {
+    // Include ptgl/Core/ObjectScene.h.
+    view.objectScene().addPrimitive("Sphere", ptgl::SphereShape{0.8});
+});
+```
+
+Capture values or owned data in posted operations. Existing `GraphicsView`,
+`ObjectScene`, GUI and transform methods retain their documented thread rules;
+route their mutations through `post()`. Callbacks should be short, must not wait
+for a worker that is waiting for the view, and must not destroy the view.
+Exceptions from posted operations are logged; later operations continue. A
+recording that throws during replay is logged and suppressed until its next
+replacement, so it cannot terminate other producers' rendering.
+
+Queue limits are public constants on `RenderCommandSender`: 1,024 pending
+operations, 128 retained/pending layer IDs, 256 bytes per ID, 16 MiB per recording
+and 64 MiB of latest retained recordings. In-flight snapshots may temporarily
+keep older recordings alive in addition to these limits. Clearing a layer frees
+its slot when the view consumes the clear. Updates to an existing ID still work
+at the layer-count limit. Invalid IDs, truncated commands, nonfinite payloads
+and unbalanced transform stacks are rejected before submission.
+
+On termination, the endpoint closes permanently and work not yet started is
+cancelled; an operation already running may finish. Copies of the sender remain
+safe after view destruction and return `Closed`. To restart, create a new view.
+Worker threads belong to the application: stop/join them before destroying any
+application data they use. With a background graphics driver, call
+`view.terminate(); view.waitUntilStopped();` on the controlling thread before
+destroying callback captures or a custom derived view. Quick views also stop the
+driver before destroying their callback members. Never wait on the rendering
+thread; the GLFW driver reports this misuse with `std::logic_error`.
+
+For a native application whose main thread can run the graphics loop, use:
+
+```cpp
+auto driver = std::make_unique<ptgl::GLFWGraphicsDriver>(
+    ptgl::GLFWGraphicsDriver::ExecutionMode::CallingThread);
+ptgl::QuickStyledGraphicsView view(std::move(driver));
+// Configure view, initialize, start workers, then:
+view.execute(); // Native: returns after the window closes.
+```
+
+This mode keeps GLFW window creation and event processing on the application's
+main thread, as required by [GLFW's threading rules](https://www.glfw.org/docs/latest/intro_guide.html#thread_safety).
+The existing background-thread mode remains the native default. In a browser,
+the driver always yields to the browser's event loop; `execute()` does not return,
+and the main thread must not join workers or call `waitUntilStopped()` while running.
+
+#### Multiple-producer demo
+
+`ThreadedDemo` runs three real `std::thread` producers at different update rates.
+Each maintains its own animated shape and posts status updates. Space cycles
+rendering styles, P pauses/resumes production, 1/2/3 hides/shows individual layers,
+and Escape stops the view. Hidden layers reappear on the next producer update.
+
+```sh
+cmake -S . -B build/native-threads -DPTGL_BUILD_THREADED_DEMO=ON
+cmake --build build/native-threads --config Release
+```
+
+Run `examples/ThreadedDemo/ThreadedDemo` under the chosen build/configuration
+directory. Native dependency paths are the same as for PlasticDemo.
+
+For WebAssembly, enable pthreads in a separate build directory:
+
+```sh
+emcmake cmake -S . -B build/emscripten-threads -G Ninja -DCMAKE_BUILD_TYPE=Release -DEIGEN_DIR="<Eigen include directory>" -DPTGL_ENABLE_WEB_THREADS=ON -DPTGL_BUILD_THREADED_DEMO=ON
+cmake --build build/emscripten-threads --parallel
+python tools/serve_web.py build/emscripten-threads
+```
+
+Open [ThreadedDemo](http://localhost:8000/examples/ThreadedDemo/ThreadedDemo.html).
+The local server supplies COOP/COEP headers required for shared WebAssembly
+memory. Production hosting must also provide these headers and a secure context
+(HTTPS; localhost is supported for development). See
+[Emscripten's pthread documentation](https://emscripten.org/docs/porting/pthreads.html).
+This build uses a pool of four browser workers and keeps rendering on the main
+thread. The demo's browser workers own their data, detach and exit when the sender
+closes. Ordinary single-thread Web builds remain available without
+`PTGL_ENABLE_WEB_THREADS`; their endpoints can still be used to defer operations.
 
 ### Object selection and editing
 

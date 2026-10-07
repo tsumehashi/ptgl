@@ -1,6 +1,7 @@
 #include <numeric>
 #include <stdexcept>
 #include "Renderer3D.h"
+#include "RenderItem.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,31 @@
 #include "ptgl/Util/MeshSection.h"
 
 namespace ptgl {
+
+void Renderer3D::renderRecorded(const Render3DItem& commands)
+{
+    const auto transform = tf_;
+    const auto color = color_;
+    const auto material = material_;
+    const double light = lightEffectRate_, point = pointSize_, line = lineWidth_;
+    auto restore = [&] {
+        tf_ = transform;
+        setColor(color);
+        setMaterial(material);
+        setEffectLight(light);
+        setPointSize(point);
+        setLineWidth(line);
+    };
+    try {
+        // Recordings start from the caller's transform but independent draw state.
+        setColor(1, 1, 1);
+        setEffectLight(1);
+        setPointSize(1);
+        setLineWidth(1);
+        commands.render(this);
+    } catch (...) { restore(); throw; }
+    restore();
+}
 
 Renderer3D::Renderer3D(GraphicsView* view) :
     graphicsView_(view)

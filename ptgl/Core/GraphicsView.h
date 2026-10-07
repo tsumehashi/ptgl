@@ -14,6 +14,7 @@
 #include "Renderer3D.h"
 #include "Renderer2D.h"
 #include "TextRenderer.h"
+#include "RenderCommandSender.h"
 
 namespace ptgl {
 
@@ -36,6 +37,11 @@ public:
     virtual void initialize();
     virtual void execute();
     virtual void terminate();
+    // For background drivers: call on the controlling thread after terminate(),
+    // before destroying a derived view or any data referenced by its callbacks.
+    // Cannot block the rendering thread or the browser main thread.
+    void waitUntilStopped();
+    RenderCommandSender commandSender() const;
 
     virtual bool terminated();
 
@@ -255,6 +261,7 @@ protected:
     // driver
     std::atomic<bool> initialized_;
     std::unique_ptr<GraphicsDriver> driver_;
+    std::shared_ptr<detail::RenderCommandQueue> commandQueue_;
 
     // renderer
     std::unique_ptr<Renderer3D> renderer3D_;

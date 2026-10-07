@@ -17,6 +17,7 @@
 namespace ptgl {
 
 class GraphicsView;
+class Render3DItem;
 class Camera;
 typedef std::shared_ptr<Camera> CameraPtr;
 
@@ -100,6 +101,9 @@ public:
     // Set from rendering callbacks, like setColor(). Reset at each render pass.
     void setMaterial(const Material& material);
     const Material& material() const { return material_; }
+    // Replay a recording with isolated transform, color, material and line/point state.
+    // Requires the rendering thread and an active render pass.
+    void renderRecorded(const Render3DItem& commands);
 
     // draw functions
     using vec3d = std::array<double, 3>;

@@ -22,7 +22,8 @@ public:
 
     }
     virtual ~TemplateQuickGraphicsView() {
-
+        this->terminate();
+        this->waitUntilStopped();
     }
 
     void setInitProcessFunction(std::function<void(void)> func) {

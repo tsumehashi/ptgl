@@ -1,0 +1,5 @@
+if(EMSCRIPTEN AND NOT PTGL_ENABLE_WEB_THREADS)
+    message(FATAL_ERROR "ThreadedDemo requires -DPTGL_ENABLE_WEB_THREADS=ON for Emscripten")
+endif()
+include(../GLFWExample.cmake)
+ptgl_add_glfw_example(ThreadedDemo)

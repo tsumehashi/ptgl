@@ -6,6 +6,16 @@ namespace ptgl
 {
 namespace detail
 {
+#ifdef __EMSCRIPTEN__
+// WebGL has no desktop timer-query entry points. CPU statistics remain available.
+class RenderTimer
+{
+  public:
+    void begin(RenderStatistics &) {}
+    void end() {}
+    void release() {}
+};
+#else
 // Desktop asynchronous timers. Never wait for GPU completion, and do not nest
 // a timer query owned by the host application. ES reports CPU timings only.
 class RenderTimer
@@ -70,6 +80,7 @@ class RenderTimer
         }
     }
 };
+#endif
 } // namespace detail
 } // namespace ptgl
 #endif

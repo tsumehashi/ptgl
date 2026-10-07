@@ -244,6 +244,8 @@ int main()
 
     view.initialize();
     view.execute();
+#ifndef __EMSCRIPTEN__
     while (!view.terminated()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+#endif
     return 0;
 }

@@ -25,6 +25,8 @@ protected:
     virtual void initialize(GraphicsView* view);
     virtual void execute() = 0;
     virtual void terminate() = 0;
+    // Background drivers must override and synchronize with their render loop.
+    virtual void waitUntilStopped() {}
 
     virtual bool terminated() = 0;
 

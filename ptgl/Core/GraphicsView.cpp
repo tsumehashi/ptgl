@@ -1,4 +1,5 @@
 #include "GraphicsView.h"
+#include "RenderCommandQueue.h"
 #include "ptgl/GUI/Widget.h"
 #include "ObjectScene.h"
 #include <set>
@@ -16,7 +17,7 @@
 namespace ptgl {
 
 GraphicsView::GraphicsView(std::unique_ptr<GraphicsDriver> driver)
-    : driver_(std::move(driver))
+    : driver_(std::move(driver)), commandQueue_(std::make_shared<detail::RenderCommandQueue>())
 {
     initialized_ = false;
 
@@ -64,6 +65,9 @@ GraphicsView::GraphicsView(std::unique_ptr<GraphicsDriver> driver)
 
 GraphicsView::~GraphicsView()
 {
+    terminate();
+    waitUntilStopped();
+    commandQueue_->release(*this);
     objectScene_.reset();
     for (const auto& item : graphicsItems_)
         GraphicsItem::traverse(item, [this](GraphicsItemPtr ptr) {
@@ -78,13 +82,24 @@ void GraphicsView::initialize()
 
 void GraphicsView::execute()
 {
-    driver_->execute();
+    try {
+        driver_->execute();
+        if (driver_->terminated()) commandQueue_->close();
+    } catch (...) {
+        commandQueue_->close();
+        throw;
+    }
 }
 
 void GraphicsView::terminate()
 {
-    driver_->terminate();
+    commandQueue_->close();
+    if (driver_) driver_->terminate();
 }
+
+void GraphicsView::waitUntilStopped() { if (driver_) driver_->waitUntilStopped(); }
+
+RenderCommandSender GraphicsView::commandSender() const { return RenderCommandSender(commandQueue_); }
 
 bool GraphicsView::terminated()
 {
@@ -308,6 +323,7 @@ void GraphicsView::executeResizeEvent(int width, int height)
 
 void GraphicsView::executeFinalizeEvent()
 {
+    commandQueue_->release(*this);
     // GL deletion after the driver destroys its context can stall a GPU driver.
     // Keep the CPU-side renderers alive, but release their GL objects here.
     transparencyRenderer_->release();
@@ -370,7 +386,9 @@ void GraphicsView::executeRenderEvent()
     glEnable(GL_DEPTH_TEST);
     glDepthFunc( GL_LEQUAL );
 
+#ifndef __EMSCRIPTEN__
     glEnable(GL_MULTISAMPLE);    // enable anti-aliasing
+#endif
 
     // renderBackground2DScene
     glClear(GL_DEPTH_BUFFER_BIT);    // clear depth buffer
@@ -436,7 +454,9 @@ void GraphicsView::executePickingPass()
     glEnable(GL_DEPTH_TEST);
     glDepthFunc( GL_LEQUAL );
 
+#ifndef __EMSCRIPTEN__
     glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
+#endif
 
     if (!pickingUpShaderProgram_->valid()) {
         std::cout << "picking shader invalid" << std::endl;
@@ -491,7 +511,9 @@ void GraphicsView::executePickingPass()
     glEnable(GL_DEPTH_TEST);
     glDepthFunc( GL_LEQUAL );
 
+#ifndef __EMSCRIPTEN__
     glDisable(GL_MULTISAMPLE);    // disable anti-aliasing
+#endif
 
     renderer3D_->setForceUseShaderProgram(depthRenderShaderProgram_);
     depthRenderShaderProgram_->bind();
@@ -1286,6 +1308,7 @@ void GraphicsView::executeGraphicsViewRenderEvent()
 
 void GraphicsView::executeGraphicsViewPrevProcessEvent()
 {
+    commandQueue_->apply(*this);
     executePrevProcess();
 }
 

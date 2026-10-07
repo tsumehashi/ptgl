@@ -1,5 +1,7 @@
 #include "RenderItem.h"
 #include <iostream>
+#include <cstring>
+#include <cmath>
 #include "Renderer3D.h"
 
 namespace {
@@ -429,34 +431,52 @@ void Render3DItem::clear()
     data_.clear();
 }
 
-// render
-void Render3DItem::render(Renderer3D* r)
+bool Render3DItem::valid() const
 {
-    if (data_.empty()) return;
+    std::size_t offset = 0, depth = 0;
+    while (offset < data_.size()) {
+        if (data_.size() - offset < sizeof(int)) return false;
+        const int type = getItemType(data_.data() + offset);
+        const int size = getItemSize(type);
+        if (size <= 0 || std::size_t(size) > data_.size() - offset) return false;
+        if (type == PushMatrixItemType) { if (++depth > 256) return false; }
+        if (type == PopMatrixItemType) { if (!depth) return false; --depth; }
+        if (type == DrawGridItemType) return false; // No replay implementation.
+        // Payloads are doubles, except for the final cap/segment integer.
+        int end = size;
+        if (type == DrawCylinderItemType || type == DrawRoundedBoxItemType ||
+            type == DrawRoundedCylinderItemType || type == DrawRoundedConeItemType)
+            end -= sizeof(int);
+        for (int i = sizeof(int); i + int(sizeof(double)) <= end; i += sizeof(double)) {
+            double value;
+            std::memcpy(&value, data_.data() + offset + i, sizeof(value));
+            if (!std::isfinite(value)) return false;
+        }
+        offset += size;
+    }
+    return depth == 0;
+}
+
+// Render is read-only; a recording is never shared with a mutable producer.
+void Render3DItem::render(Renderer3D* r) const
+{
     if (!r) return;
-
-    uint8_t*  ptr = data_.data();
-    int index = 0;
-    while (index < (int)data_.size()) {
-        int itemType = getItemType(&ptr[index]);
-        int itemSize = getItemSize(itemType);
-//        std::cout << "type = " << itemType << ", itemSize = " << itemSize << std::endl;
-        if (itemSize == 0) {
-            // parse error
-            std::cout << "parse error" << std::endl;
-            break;
-        }
-
-        if ((index + itemSize) <= (int)data_.size()) {
-            renderSub(r, &ptr[index], itemType);
-        }
-        index += itemSize;
+    std::size_t offset = 0;
+    while (offset < data_.size()) {
+        if (data_.size() - offset < sizeof(int)) break;
+        const int type = getItemType(data_.data() + offset);
+        const int size = getItemSize(type);
+        if (size <= 0 || std::size_t(size) > data_.size() - offset) break;
+        renderSub(r, data_.data() + offset, type);
+        offset += size;
     }
 }
 
-int Render3DItem::getItemType(uint8_t* ptr) const
+int Render3DItem::getItemType(const uint8_t* ptr) const
 {
-    return *((int*)ptr);
+    int type;
+    std::memcpy(&type, ptr, sizeof(type));
+    return type;
 }
 
 int Render3DItem::getItemSize(int itemType) const
@@ -503,54 +523,54 @@ int Render3DItem::getItemSize(int itemType) const
 }
 
 
-void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
+void Render3DItem::renderSub(Renderer3D* r, const uint8_t* ptr, int itemType) const
 {
     switch (itemType) {
     case EffectLightItemType:
     {
-        EffectLightItem* item = (EffectLightItem*)ptr;
+        const EffectLightItem* item = reinterpret_cast<const EffectLightItem*>(ptr);
         r->setEffectLight(item->effect);
         break;
     }
     case PointSizeItemType:
     {
-        PointSizeItem* item = (PointSizeItem*)ptr;
+        const PointSizeItem* item = reinterpret_cast<const PointSizeItem*>(ptr);
         r->setPointSize(item->size);
         break;
     }
     case LineWidthItemType:
     {
-        LineWidthItem* item = (LineWidthItem*)ptr;
+        const LineWidthItem* item = reinterpret_cast<const LineWidthItem*>(ptr);
         r->setLineWidth(item->width);
         break;
     }
     case ColorItemType:
     {
-        ColorItem* item = (ColorItem*)ptr;
+        const ColorItem* item = reinterpret_cast<const ColorItem*>(ptr);
         r->setColor(item->rgba[0], item->rgba[1], item->rgba[2], item->rgba[3]);
         break;
     }
     case MaterialItemType:
     {
-        MaterialItem& item = *(MaterialItem*)ptr;
+        const MaterialItem& item = *reinterpret_cast<const MaterialItem*>(ptr);
         r->setMaterial(Material{item.roughness, item.reflectance});
         break;
     }
     case DrawPointItemType:
     {
-        DrawPointItem* item = (DrawPointItem*)ptr;
+        const DrawPointItem* item = reinterpret_cast<const DrawPointItem*>(ptr);
         r->drawPoint(item->pos);
         break;
     }
     case DrawLineItemType:
     {
-        DrawLineItem* item = (DrawLineItem*)ptr;
+        const DrawLineItem* item = reinterpret_cast<const DrawLineItem*>(ptr);
         r->drawLine(item->pos1, item->pos2);
         break;
     }
     case DrawBoxItemType:
     {
-        DrawBoxItem* item = (DrawBoxItem*)ptr;
+        const DrawBoxItem* item = reinterpret_cast<const DrawBoxItem*>(ptr);
         r->drawBox(item->pos, item->R, item->sides);
         break;
     }
@@ -574,73 +594,73 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     }
     case DrawSphereItemType:
     {
-        DrawSphereItem* item = (DrawSphereItem*)ptr;
+        const DrawSphereItem* item = reinterpret_cast<const DrawSphereItem*>(ptr);
         r->drawSphere(item->pos, item->R, item->r);
         break;
     }
     case DrawCylinderItemType:
     {
-        DrawCylinderItem* item = (DrawCylinderItem*)ptr;
+        const DrawCylinderItem* item = reinterpret_cast<const DrawCylinderItem*>(ptr);
         r->drawCylinder(item->pos, item->R, item->length, item->radius, (bool)item->drawCap);
         break;
     }
     case DrawCapsuleItemType:
     {
-        DrawCapsuleItem* item = (DrawCapsuleItem*)ptr;
+        const DrawCapsuleItem* item = reinterpret_cast<const DrawCapsuleItem*>(ptr);
         r->drawCapsule(item->pos, item->R, item->length, item->radius);
         break;
     }
     case DrawConeItemType:
     {
-        DrawConeItem* item = (DrawConeItem*)ptr;
+        const DrawConeItem* item = reinterpret_cast<const DrawConeItem*>(ptr);
         r->drawCone(item->pos, item->R, item->length, item->radius);
         break;
     }
     case DrawRingItemType:
     {
-        DrawRingItem* item = (DrawRingItem*)ptr;
+        const DrawRingItem* item = reinterpret_cast<const DrawRingItem*>(ptr);
         r->drawRing(item->pos, item->R, item->length, item->outer_radius, item->inner_radius);
         break;
     }
     case DrawCircleItemType:
     {
-        DrawCircleItem* item = (DrawCircleItem*)ptr;
+        const DrawCircleItem* item = reinterpret_cast<const DrawCircleItem*>(ptr);
         r->drawCircle(item->pos, item->R, item->r);
         break;
     }
     case DrawRingCircleItemType:
     {
-        DrawRingCircleItem* item = (DrawRingCircleItem*)ptr;
+        const DrawRingCircleItem* item = reinterpret_cast<const DrawRingCircleItem*>(ptr);
         r->drawRingCircle(item->pos, item->R, item->outer_radius, item->inner_radius);
         break;
     }
     case DrawRectItemType:
     {
-        DrawRectItem* item = (DrawRectItem*)ptr;
+        const DrawRectItem* item = reinterpret_cast<const DrawRectItem*>(ptr);
         r->drawRect(item->pos, item->R, item->w, item->h);
         break;
     }
     case DrawArrowItemType:
     {
-        DrawArrowItem* item = (DrawArrowItem*)ptr;
+        const DrawArrowItem* item = reinterpret_cast<const DrawArrowItem*>(ptr);
         r->drawArrow(item->pos1, item->pos2, item->r);
         break;
     }
     case DrawArrowConeItemType:
     {
-        DrawArrowConeItem* item = (DrawArrowConeItem*)ptr;
+        const DrawArrowConeItem* item = reinterpret_cast<const DrawArrowConeItem*>(ptr);
         r->drawArrowCone(item->pos1, item->pos2, item->r);
         break;
     }
     case DrawAxisItemType:
     {
-        DrawAxisItem* item = (DrawAxisItem*)ptr;
+        const DrawAxisItem* item = reinterpret_cast<const DrawAxisItem*>(ptr);
         r->drawAxis(item->pos, item->R, item->length);
         break;
     }
 //    case DrawGridItemType:
 //    {
-//        DrawGridItem* item = (DrawGridItem*)ptr;
+//        const DrawGridItem* item = reinterpret_cast<const DrawGridItem*>(ptr);
 //        r->drawGrid(item->w, item->div);
 //        break;
 //    }
@@ -665,13 +685,13 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     }
     case TranslateItemType:
     {
-        TranslateItem* item = (TranslateItem*)ptr;
+        const TranslateItem* item = reinterpret_cast<const TranslateItem*>(ptr);
         r->translate(item->t[0], item->t[1], item->t[2]);
         break;
     }
     case RotateItemType:
     {
-        RotateItem* item = (RotateItem*)ptr;
+        const RotateItem* item = reinterpret_cast<const RotateItem*>(ptr);
         const double* m = item->R;
         Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(m);
         r->rotate(R);
@@ -679,13 +699,13 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     }
     case RpyRotateItemType:
     {
-        RpyRotateItem* item = (RpyRotateItem*)ptr;
+        const RpyRotateItem* item = reinterpret_cast<const RpyRotateItem*>(ptr);
         r->rotateRpy(item->rpy[0], item->rpy[1], item->rpy[2]);
         break;
     }
     case TransformItemType:
     {
-        TransformItem* item = (TransformItem*)ptr;
+        const TransformItem* item = reinterpret_cast<const TransformItem*>(ptr);
         const double* m = item->R;
         Eigen::Vector3d p(item->pos[0], item->pos[1], item->pos[2]);
         Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(m);
@@ -694,7 +714,7 @@ void Render3DItem::renderSub(Renderer3D* r, uint8_t* ptr, int itemType)
     }
     case ScaleItemType:
     {
-        ScaleItem* item = (ScaleItem*)ptr;
+        const ScaleItem* item = reinterpret_cast<const ScaleItem*>(ptr);
         r->scale(item->scale[0], item->scale[1], item->scale[2]);
         break;
     }
