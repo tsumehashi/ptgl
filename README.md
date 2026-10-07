@@ -349,6 +349,112 @@ The renderer caches up to 32 mesh/plane combinations; changing a plane or moving
 an object can require CPU clipping again. Cost grows with mesh complexity, so
 large imported meshes may need simplification for interactive plane movement.
 
+### GUI controls and scene editor
+
+The reusable scene editor works with `GraphicsView`; its rendering-settings page
+requires `StyledGraphicsView`. Include `ptgl/GUI/SceneEditorPanel.h`:
+
+```cpp
+auto editor = std::make_shared<ptgl::gui::SceneEditorPanel>(view);
+editor->setPos(900, 10);
+editor->setSize(340, 700);
+view.addGraphicsItem(editor);
+editor->setPage(1); // 0: objects, 1: properties, 2: rendering
+```
+
+The objects page adds any of the seven primitive types, imports an STL/OBJ path,
+selects, hides/shows and deletes objects. `setOnAddObjectFunction()` lets an
+application choose its own spawn positions. Properties include the name,
+position, XYZ Euler angles in degrees, dimensions, fillet radius, color, opacity
+and optional material override. Mesh objects retain their imported geometry.
+Invalid geometry edits leave the object intact and display an error. Values
+follow scene selection and transform-handle changes; unfinished text edits are
+not overwritten during refresh. The view must outlive its editor panel.
+
+The rendering page controls style, CAD edges/width/brightness, shadows/softness,
+environment lighting, ambient occlusion and the section plane's point, normal,
+retained side, cap and cap color. It also provides Classic/Dark/Light GUI themes and a
+scale control. The demo docks this editor on the right and keeps its keyboard
+shortcuts and mesh file-drop controls.
+
+For application-specific panels, use `ptgl/GUI/Controls.h` and
+`ptgl/GUI/Layout.h`:
+
+```cpp
+auto panel = std::make_shared<ptgl::gui::Panel>("Settings");
+auto form = std::make_shared<ptgl::gui::FormLayout>();
+auto roughness = std::make_shared<ptgl::gui::DoubleSpinBox>();
+roughness->setRange(0.12, 1.0);
+roughness->setStep(0.02);
+roughness->setDecimals(2);
+roughness->setValue(0.35, false);
+roughness->setOnValueChangedFunction([&](double value) {
+    auto material = view.defaultMaterial();
+    material.roughness = value;
+    view.setDefaultMaterial(material);
+});
+form->addRow("Roughness", roughness);
+panel->add(form);
+panel->setPos(10, 10);
+panel->setSize(320, 160);
+view.addGraphicsItem(panel);
+```
+
+* `DoubleSpinBox` supports finite decimal values, step/precision settings,
+  arrow buttons, Up/Down keys and the wheel. Invalid text restores the last value.
+* `DoubleSlider` supports finite ranges, pointer dragging, wheel/arrow steps and
+  Home/End. Equal endpoints produce a fixed value.
+* `CheckBox`, `ComboBox` and `ColorPicker` provide toggles, dropdown choices and
+  RGB sliders. Popups render and receive input above ordinary controls.
+* `Layout` arranges vertically or horizontally with padding, spacing and stretch;
+  `FormLayout` aligns labels/editors. `Widget::setPreferredSize()` and
+  `setMinimumSize()` use logical pixels. `ScrollArea` clips both child rendering
+  and hit regions, and reveals focused children during Tab navigation.
+* `Theme` centralizes colors and metrics for the new controls and buttons/text
+  fields. `setTheme()` on a parent is inherited by descendants. `Theme::light()`
+  selects the light palette and `Theme::dark()` selects the dark palette. The default
+  `Theme{}` preserves the original translucent gray panels, white fields, black text,
+  pale pink checked buttons and pale blue editing fields. `scale` converts logical GUI metrics to framebuffer
+  pixels. Explicit `setPos()`/`setSize()` coordinates remain framebuffer pixels.
+
+GUI changes belong on the view/event thread, or before execution. GUI pointer
+events are consumed before camera controls and scene picking. Using a panel does
+not deselect the edited 3D object. Consumed keys do not reach the view's shortcut
+callback. Tab/Shift+Tab moves focus, while removal, hiding and window focus loss
+clear invalid focus/capture. Releasing a button outside its bounds cancels its
+click. Child visibility/enabled/pickable states now inherit the parent's effective
+state without overwriting the child's own setting.
+
+GLFW input is queued in arrival order, including key press/repeat/release events,
+so applications should check `KeyEvent::keyAction()` in shortcut callbacks.
+Text editing uses GLFW's character events instead of deriving characters from
+physical keys. It supports UTF-8 codepoint movement/deletion, mouse/Shift selection,
+Ctrl/Cmd+A/C/X/V, Enter to commit and Escape to cancel. This is single-line editing;
+combined grapheme clusters are not treated as a single editing unit. Older drivers
+without character events retain the ASCII-key fallback.
+
+On Windows, `GLFWGraphicsDriver` includes IME preedit text, composition cursor,
+native candidate positioning and committed text handling through the
+[Windows IME composition messages](https://learn.microsoft.com/en-us/windows/win32/intl/wm-ime-composition).
+Other platforms use GLFW committed-character input; native preedit/candidate
+integration is currently Windows-specific. The GLFW driver also supplies the
+system clipboard. Custom drivers can override the corresponding protected
+`GraphicsDriver` methods.
+
+Japanese text needs a font containing Japanese glyphs. Call
+`view.loadGuiFont(utf8Path)` from `initProcess()` or the view thread with a current
+GL context; it returns false on load failure. TrueType fonts and the first face
+of TrueType collections are supported. The Windows demo uses the installed
+Meiryo font when available; no system font is bundled. Text measurement uses the
+loaded font's actual advances, including proportional and multibyte text.
+
+`ObjectScene::objectOpacity()` / `setObjectOpacity()` read and update an object's
+base opacity while keeping selection fading separate. Use these for editor
+controls that must preserve opacity after deselection.
+
+Rebuild the library and applications together: GUI, driver and view class layouts
+and virtual interfaces have changed.
+
 ### Rounded primitives
 
 `Renderer3D` supports rounded solids directly in Legacy, Plastic and CAD modes.

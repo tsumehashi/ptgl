@@ -31,13 +31,8 @@ void DockWidgetPanel::addDockWidget(DockWidgetPtr widget)
 
 void DockWidgetPanel::removeDockWidget(DockWidgetPtr widget)
 {
-    const auto remvitr = std::remove(addedDockWidgets_.begin(), addedDockWidgets_.end(), widget);
-    for (auto itr = remvitr; itr != addedDockWidgets_.end(); ++itr) {
-        Widget::removeWidget(*itr);
-    }
-
-    addedDockWidgets_.erase(remvitr, addedDockWidgets_.end());
-
+    addedDockWidgets_.erase(std::remove(addedDockWidgets_.begin(), addedDockWidgets_.end(), widget),
+                            addedDockWidgets_.end());
     DockWidget::removeWidget(widget);
 }
 

@@ -25,6 +25,9 @@ add_library(ptgl
 target_compile_features(ptgl PUBLIC cxx_std_17)
 target_include_directories(ptgl PUBLIC ${EIGEN_DIR} ${PROJECT_SOURCE_DIR})
 target_link_libraries(ptgl PUBLIC OpenGL::GL GLEW::GLEW)
+if(WIN32)
+    target_link_libraries(ptgl PUBLIC imm32)
+endif()
 
 if(MSVC)
     target_compile_definitions(ptgl PUBLIC _USE_MATH_DEFINES NOMINMAX)

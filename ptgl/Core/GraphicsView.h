@@ -89,6 +89,18 @@ public:
     ObjectScene& objectScene();
     // Finish the captured item gesture without waiting for a physical mouse release.
     void cancelGraphicsItemDrag();
+    void clearItemInput(const GraphicsItemPtr &item);
+    void setKeyboardFocus(const GraphicsItemPtr &item);
+    const GraphicsItemPtr &keyboardFocus() const { return focusedGraphicsItem_; }
+    std::string clipboardText() const;
+    void setClipboardText(const std::string &text);
+    bool hasTextInputEvents() const;
+    void setTextInputRect(int x, int y, int w, int h);
+    // Call from initProcess or the render/event thread with a current GL context.
+    bool loadGuiFont(const std::string &path) { return renderer2D_->loadFont(path); }
+    void textInput(const std::string &text);
+    void textComposition(const std::string &text, int cursor);
+    void cancelInput();
     // Notify cached scene passes about geometry/visibility changes.
     virtual void notifySceneChanged() {}
 
@@ -294,6 +306,9 @@ protected:
     GraphicsItemPtr hoveredGraphicsItem_;
 
     GraphicsItemPtr prevMousePressGraphicsItem_;
+    GraphicsItemPtr guiAt(int x, int y) const;
+    void updateGui();
+    bool guiPointerCaptured_ = false;
 
     std::unique_ptr<GraphicsItemMouseEvent> graphicsItemMouseEvent_;
     std::unique_ptr<GraphicsItemWheelEvent> graphicsItemWheelEvent_;

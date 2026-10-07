@@ -17,7 +17,6 @@ using ListElementWidgetPtr = std::shared_ptr<ListElementWidget>;
 using ListNodeWidgetPtr = std::shared_ptr<ListNodeWidget>;
 using ListViewWidgetPtr = std::shared_ptr<ListViewWidget>;
 
-class Renderer2D;
 
 class ListElementWidget : public Widget {
 public:
@@ -55,6 +54,7 @@ protected:
 
 class ListNodeWidget : public Widget {
 public:
+    void layout() override;
     ListNodeWidget();
     ListNodeWidget(const std::string& typeName, const std::string& name);
     virtual ~ListNodeWidget();
@@ -143,6 +143,7 @@ protected:
 
 class ListViewWidget : public Widget {
 public:
+    void layout() override;
     ListViewWidget();
     virtual ~ListViewWidget();
 

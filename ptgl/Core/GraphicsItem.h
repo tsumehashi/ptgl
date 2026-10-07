@@ -36,14 +36,15 @@ public:
     virtual void removeChild(GraphicsItemPtr item);
 
     // visible == false not picking
-    bool isVisible() const { return visible_; }
+    bool isVisible() const { return visible_ && (!parent_ || parent_->isVisible()); }
+    bool isLocallyVisible() const { return visible_; }
     virtual void setVisible(bool visible);
 
-    bool isEnabled() const { return enabled_; }
+    bool isEnabled() const { return enabled_ && (!parent_ || parent_->isEnabled()); }
     virtual void setEnabled(bool enabled);
 
     // pickable == false not picking
-    bool isPickable() const { return pickable_; }
+    bool isPickable() const { return pickable_ && (!parent_ || parent_->isPickable()); }
     virtual void setPickable(bool enable);
 
     // Scene opacity is independent of picking. Update on the view/event thread.
@@ -77,6 +78,7 @@ public:
     bool isPicked() const { return picked_; }
     bool isChecked() const { return checked_; }
     bool isPressed() const { return pressed_; }
+    virtual void cancelInteraction() { pressed_ = false; }
 
     bool isPickChanged() const { return pickChanged_; }
     bool isCheckChanged() const { return checkChanged_; }
@@ -131,8 +133,10 @@ protected:
 
     // Key event
     virtual void keyPressEvent(ptgl::GraphicsItemKeyEvent* /*e*/) {}
+    virtual void textInputEvent(const std::string &) {}
+    virtual void textCompositionEvent(const std::string &, int) {}
 
-private:
+  private:
 
     void setGraphicsView(GraphicsView* view);
 

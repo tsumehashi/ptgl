@@ -7,7 +7,6 @@
 namespace ptgl {
 namespace gui {
 
-class Renderer2D;
 
 class PushButton;
 typedef std::shared_ptr<PushButton> PushButtonPtr;
@@ -31,6 +30,7 @@ public:
 protected:
     virtual void render2DScene(ptgl::Renderer2D* r) override;
 
+    bool customColor_ = false, customCheckedColor_ = false;
     std::array<double, 4> color_;
     std::array<double, 4> checkedColor_;
 };

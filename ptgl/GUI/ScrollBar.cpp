@@ -69,7 +69,7 @@ void VerticalScrollBar::render2DScene(ptgl::Renderer2D* r)
     // set BarWidget
     const int upBottunOffset = valueDownButton_->height();
     const int minBarSize = 4;
-    const int barAreaSize = h - 2*w;
+    const int barAreaSize = std::max(0, h - 2 * w);
     if (scrolledAreaSize() > h) {
         float barRatio = scrollAreaSize() / (float)scrolledAreaSize();
         if (barRatio > 1.0) barRatio = 1.0;
@@ -102,7 +102,7 @@ void VerticalScrollBar::setScrollValueFromBarLocalY(int localY)
     }
 
     const int minBarSize = 4;
-    const int barAreaSize = h - 2*w;
+    const int barAreaSize = std::max(0, h - 2 * w);
 
     float barRatio = scrollAreaSize() / (float)scrolledAreaSize();
     if (barRatio > 1.0) barRatio = 1.0;
@@ -114,6 +114,10 @@ void VerticalScrollBar::setScrollValueFromBarLocalY(int localY)
     }
     const int scrolledAreaLength = scrolledAreaSize() - scrollAreaSize();
     const int barPosAreaSize = barAreaSize - barSize;
+    if (barPosAreaSize <= 0) {
+        setScrollValue(0);
+        return;
+    }
     int v = (scrolledAreaLength / (float)barPosAreaSize) * localY;
     if (scrollDeltaValue() > 0) {
         int nv = v / scrollDeltaValue();
@@ -224,7 +228,7 @@ void HorizontalScrollBar::render2DScene(ptgl::Renderer2D* r)
     // set BarWidget
     int upBottunOffset = valueDownButton_->width();
     const int minBarSize = 4;
-    const int barAreaSize = w - 2*h;
+    const int barAreaSize = std::max(0, w - 2 * h);
     if (scrolledAreaSize() > h) {
         float barRatio = scrollAreaSize() / (float)scrolledAreaSize();
         if (barRatio > 1.0) barRatio = 1.0;
@@ -257,7 +261,7 @@ void HorizontalScrollBar::setScrollValueFromBarLocalX(int localX)
     }
 
     const int minBarSize = 4;
-    const int barAreaSize = w - 2*h;
+    const int barAreaSize = std::max(0, w - 2 * h);
 
     float barRatio = scrollAreaSize() / (float)scrolledAreaSize();
     if (barRatio > 1.0) barRatio = 1.0;
@@ -269,6 +273,10 @@ void HorizontalScrollBar::setScrollValueFromBarLocalX(int localX)
     }
     const int scrolledAreaLength = scrolledAreaSize() - scrollAreaSize();
     const int barPosAreaSize = barAreaSize - barSize;
+    if (barPosAreaSize <= 0) {
+        setScrollValue(0);
+        return;
+    }
     int v = (scrolledAreaLength / (float)barPosAreaSize) * localX;
     if (scrollDeltaValue() > 0) {
         int nv = v / scrollDeltaValue();

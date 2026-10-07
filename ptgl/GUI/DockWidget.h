@@ -3,13 +3,11 @@
 
 #include "Widget.h"
 #include "PushButton.h"
+#include <unordered_map>
 
 namespace ptgl {
 namespace gui {
 
-class Renderer2D;
-class TextRenderer;
-class GraphicsItemMouseEvent;
 
 class DockWidget;
 typedef std::shared_ptr<DockWidget> DockWidgetPtr;
@@ -30,6 +28,7 @@ public:
 
     virtual void addWidget(WidgetPtr widget) override;
     virtual void removeWidget(WidgetPtr widget) override;
+    void layout() override;
 
     size_t numWidgets() const { return addedWidgets_.size(); }
 
@@ -62,6 +61,7 @@ protected:
     std::string windowTitle_;
 
     std::vector<WidgetPtr> addedWidgets_;
+    std::unordered_map<Widget *, bool> collapsedVisibility_;
 
     PushButtonPtr titleBarButton_;
 

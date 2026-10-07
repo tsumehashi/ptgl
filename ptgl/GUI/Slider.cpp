@@ -1,6 +1,7 @@
 #include "Slider.h"
 #include "ptgl/Core/GraphicsItemEvent.h"
 #include "ptgl/Core/Renderer2D.h"
+#include <stdexcept>
 
 namespace ptgl {
 namespace gui {
@@ -29,7 +30,19 @@ void Slider::init()
 
 void Slider::setSliderLength(int sliderLength)
 {
+    if (sliderLength < 0)
+        throw std::invalid_argument("Negative slider length");
     sliderLength_ = sliderLength;
+}
+
+void Slider::layout()
+{
+    updatePos();
+    double range = double(maximum()) - minimum();
+    int offset = range > 0 ? int((double(value()) - minimum()) / range * sliderLength_) : 0;
+    sliderHandle_->setSize(10, 10);
+    sliderHandle_->setLocalPos(offset - 5, -5);
+    sliderHandle_->updatePos();
 }
 
 void Slider::render2DScene(ptgl::Renderer2D* r)
@@ -72,8 +85,8 @@ void Slider::SliderHandle::renderPicking2DScene(ptgl::Renderer2D* r)
     int x = this->x();
     int y = this->y();
 
-    double scale = (slider_->value() - slider_->minimum()) / double(slider_->maximum() - slider_->minimum());
-    int pos = scale * slider_->sliderLength() + x;
+    int pos = x + width() / 2;
+    y += height() / 2;
 
     int radius = 5;
     r->setEllipseMode(ptgl::Renderer2D::Mode::Center);
@@ -89,7 +102,7 @@ void Slider::SliderHandle::renderPicking2DScene(ptgl::Renderer2D* r)
 
 void Slider::SliderHandle::mouseMoveEvent(ptgl::GraphicsItemMouseEvent* e)
 {
-    int x = this->x();
+    int x = slider_->x();
 
     int beginX = x;
     int endX = x + slider_->sliderLength();
@@ -98,7 +111,9 @@ void Slider::SliderHandle::mouseMoveEvent(ptgl::GraphicsItemMouseEvent* e)
     if (vx < beginX) vx = beginX;
     if (vx > endX) vx = endX;
 
-    double range = slider_->maximum() - slider_->minimum();
+    if (endX <= beginX)
+        return;
+    double range = double(slider_->maximum()) - slider_->minimum();
     double value = range * (vx - beginX) / double(endX - beginX) + slider_->minimum();
     slider_->setValue(value);
 }

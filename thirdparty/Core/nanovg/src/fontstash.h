@@ -264,7 +264,10 @@ int fons__tt_loadFont(FONScontext *context, FONSttFontImpl *font, unsigned char 
 	FONS_NOTUSED(dataSize);
 
 	font->font.userdata = context;
-	stbError = stbtt_InitFont(&font->font, data, 0);
+	// A system font may be a TrueType collection (for example Meiryo on Windows).
+	int offset = stbtt_GetFontOffsetForIndex(data, 0);
+	if (offset < 0) return 0;
+	stbError = stbtt_InitFont(&font->font, data, offset);
 	return stbError;
 }
 

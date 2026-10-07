@@ -48,6 +48,7 @@ SpinSliderPtr SpinSliderPanel::addSlider(const std::string& name)
     SpinSliderPtr ptr = findSlider(name);
     if (!ptr) {    // not find
         SpinSliderPtr slider = std::make_shared<SpinSlider>(name);
+        slider->setName(name);
         sliders_.push_back(slider);
         nameToSliderMap_[name] = slider;
 

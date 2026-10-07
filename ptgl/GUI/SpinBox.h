@@ -11,6 +11,7 @@ namespace gui {
 
 class SpinBox : public AbstractSlider {
 public:
+    void layout() override;
     SpinBox();
     SpinBox(const std::string& text);
     virtual ~SpinBox();

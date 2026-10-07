@@ -7,6 +7,8 @@
 #include <thread>
 #include <vector>
 #include "ptgl/Core/ObjectScene.h"
+#include "ptgl/GUI/SceneEditorPanel.h"
+#include <cstdlib>
 #include "ptgl/Core/QuickGraphicsView.h"
 #include "ptgl/Core/SphericalCamera.h"
 #include "ptgl/Driver/GLFWGraphicsDriver.h"
@@ -15,7 +17,7 @@ int main()
 {
     ptgl::QuickStyledGraphicsView view(std::make_unique<ptgl::GLFWGraphicsDriver>());
     view.setWindowTitle("PlasticDemo - Space: Plastic / CAD / Legacy");
-    view.setWindowSize(1100, 720);
+    view.setWindowSize(1280, 800);
     view.setFrameRate(60);
     view.setBackgroundColor(0.15, 0.18, 0.23);
     view.setDrawWorldGrid(false);
@@ -49,6 +51,10 @@ int main()
     auto camera = std::make_shared<ptgl::SphericalCamera>();
     view.setCamera(camera);
     view.setInitProcessFunction([&] {
+#ifdef _WIN32
+        if (const char *windows = std::getenv("WINDIR"))
+            view.loadGuiFont(std::string(windows) + "/Fonts/meiryo.ttc");
+#endif
         camera->setCenter(Eigen::Vector3d(0, 0, 0.7));
         camera->setDistance(10);
         camera->setHeading(65);
@@ -107,6 +113,23 @@ int main()
             }
         }
     };
+    auto editor = std::make_shared<ptgl::gui::SceneEditorPanel>(view);
+    view.addGraphicsItem(editor);
+    editor->setOnAddObjectFunction([&](int shape) {
+        const std::array<int, 7> mapping{{3, 0, 2, -1, 1, 4, 5}};
+        if (mapping[shape] >= 0)
+            addShape(size_t(mapping[shape]));
+        else {
+            auto cone = scene.addPrimitive("Cone", ptgl::ConeShape{1.6, .72}, {0, 0, .8});
+            cone->setColor(.7, .45, .25);
+            scene.selectObject(cone);
+        }
+    });
+    view.setPrevEventProcessFunction([&] {
+        int panelWidth = std::min(editor->theme().pixels(340), std::max(240, view.width() - 40));
+        editor->setPos(std::max(0, view.width() - panelWidth - 10), 10);
+        editor->setSize(panelWidth, std::max(100, view.height() - 20));
+    });
     view.setDropEventFunction([&](ptgl::DropEvent* e) {
         for (const auto& path : e->dropPaths()) {
             try {
@@ -199,43 +222,24 @@ int main()
             view.terminate();
         }
     });
-    view.setRenderTextSceneFunction([&](ptgl::TextRenderer* r) {
-        using Style = ptgl::StyledGraphicsView::RenderStyle;
-        bool plastic = view.renderStyle() == Style::Plastic && view.plasticRenderingAvailable();
-        bool cad = view.renderStyle() == Style::CAD && view.cadRenderingAvailable();
+    view.setRenderTextSceneFunction([&](ptgl::TextRenderer *r) {
+        r->setTextSize(15);
         r->setTextColor(1, 1, 1);
-        if (cad) {
-            r->drawText(20, 30, std::string("CAD | edges: ") + (view.edgesActive() ? "on" : "off")
-                + " | width: " + std::to_string(view.edgeSettings().width).substr(0, 4) + " px"
-                + " | shadows: " + (view.shadowsActive() ? "on" : "off"));
-        } else {
-            r->drawText(20, 30, std::string(plastic ? "Plastic" : "Legacy")
-                + " | roughness: " + std::to_string(view.defaultMaterial().roughness).substr(0, 4)
-                + " | shadows: " + (view.shadowsActive() ? "on" : "off")
-                + " | softness: " + std::to_string(view.shadowSettings().softness).substr(0, 3));
+        const char *style = view.renderStyle() == ptgl::RenderStyle::CAD       ? "CAD"
+                            : view.renderStyle() == ptgl::RenderStyle::Plastic ? "Plastic"
+                                                                               : "Legacy";
+        r->drawText(20, 28,
+                    std::string(style) +
+                        " | Space: switch style | Objects: " + std::to_string(objects.size()));
+        r->drawText(20, 52, "Click: select | Right drag: orbit | Wheel: zoom");
+        r->drawText(20, 76, "1-6: add | Delete: remove | Drop STL / OBJ to load");
+        r->drawText(20, 100, "X: section | F: fill | K: reverse | PageUp/Down: height");
+        if (showStatistics) {
+            auto s = view.renderStatistics();
+            r->drawText(20, 124, "Edges CPU: " + std::to_string(s.edgeCpuMilliseconds) + " ms");
         }
-        r->drawText(20, 55, cad ? "Space: Plastic / CAD / Legacy   Right drag: orbit   Wheel: zoom"
-            : "Space: Plastic / CAD / Legacy   Up/Down: roughness   Right drag: orbit   Wheel: zoom");
-        r->drawText(20, 80, cad ? "B: toggle edges   [ / ]: edge width   S: shadows   L: moving light"
-            : "S: shadows   [ / ]: softness   L: moving light   E: environment reflections   A: ambient occlusion");
-        r->drawText(20, 105, "Left click: select   Drag arrows/planes: move   Drag rings: rotate   Click floor/background: deselect");
-        if(cad && showStatistics) {
-            const auto stats=view.renderStatistics();
-            r->drawText(20,130,"Edges " + std::to_string(stats.edgeSupersampling) + "x | CPU "
-                + std::to_string(stats.edgeCpuMilliseconds).substr(0,5) + " ms | GPU "
-                + (stats.edgeGpuMilliseconds<0 ? "n/a" : std::to_string(stats.edgeGpuMilliseconds).substr(0,5)+" ms")
-                + " | captures " + (stats.edgeCaptureReused ? "reused" : std::to_string(stats.edgeDrawCalls)+" draws"));
-        } else r->drawText(20, 130, "Selected: " + (selectedObject ? selectedObject->name() + " (50% opacity)" : std::string("none"))
-            + (cad ? " | Q: quality  P: timings  C: cache  , / .: brightness" : ""));
-        r->drawText(20, 155, "Add: 1 sphere   2 rounded box   3 cylinder   4 cube   5 rounded cylinder   6 rounded cone");
-        r->drawText(20, 180, "Delete: remove selected   Objects: " + std::to_string(objects.size()));
-        const auto settings = view.sectionSettings();
-        r->drawText(20, 205, std::string("X: section ") + (settings.enabled ? "on" : "off")
-            + "   PgUp/PgDn: height " + std::to_string(settings.point[2]).substr(0, 5)
-            + "   F: cap " + (settings.capEnabled ? "on" : "off") + "   K: reverse   Drop STL/OBJ to load");
-        if (settings.enabled && selectedObject && selectedObject->mesh())
-            r->drawText(20, 230, ptgl::sectionStatusMessage(selectedObject->sectionStatus()));
-        if (!meshMessage.empty()) r->drawText(20, 255, meshMessage);
+        if (!meshMessage.empty())
+            r->drawText(20, view.height() - 20, meshMessage.substr(0, 75));
     });
 
     view.initialize();

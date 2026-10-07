@@ -1,4 +1,5 @@
 #include "AbstractSlider.h"
+#include <stdexcept>
 
 namespace ptgl {
 namespace gui {
@@ -37,6 +38,8 @@ AbstractSlider& AbstractSlider::setMinimum(int min)
 
 AbstractSlider& AbstractSlider::setRange(int min, int max)
 {
+    if (min > max)
+        throw std::invalid_argument("Slider minimum exceeds maximum");
     maximum_ = max;
     minimum_ = min;
     if (value_ < minimum_) {

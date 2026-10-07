@@ -47,10 +47,12 @@ int Font::defaultFontTextHeight(int textSize)
 
 int Font::defaultFontTextWidth(int textSize)
 {
+    if (textSize <= 0)
+        return 0;
     if (textSize < font_width_map_RobotoMono_Regular_ttf_size) {
         return font_width_map_RobotoMono_Regular_ttf[textSize];
     } else {
-        return font_width_map_RobotoMono_Regular_ttf[textSize-1];
+        return static_cast<int>(textSize * 0.6);
     }
 }
 

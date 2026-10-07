@@ -36,6 +36,11 @@ protected:
     virtual int width() const = 0;
     virtual int height() const = 0;
     virtual int frameRate() const = 0;
+    virtual std::string clipboardText() const { return {}; }
+    virtual void setClipboardText(const std::string &) {}
+    virtual bool hasTextInputEvents() const { return false; }
+    virtual void setTextInputRect(int, int, int, int) {}
+    virtual void cancelTextComposition() {}
 
     void executeGraphicsViewInitializeEvent();
     void executeGraphicsViewFinalizeEvent();

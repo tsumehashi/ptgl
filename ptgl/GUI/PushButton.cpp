@@ -28,25 +28,29 @@ PushButton::~PushButton()
 
 PushButton& PushButton::setColor(const std::array<double, 4>& color)
 {
+    customColor_ = true;
     color_ = color;
     return *this;
 }
 
 PushButton& PushButton::setColor(double r, double g, double b, double a)
 {
-    color_ = {{r,g,b,a}};
+    customColor_ = true;
+    color_ = {{r, g, b, a}};
     return *this;
 }
 
 PushButton& PushButton::setCheckedColor(const std::array<double, 4>& color)
 {
+    customCheckedColor_ = true;
     checkedColor_ = color;
     return *this;
 }
 
 PushButton& PushButton::setCheckedColor(double r, double g, double b, double a)
 {
-    checkedColor_ = {{r,g,b,a}};
+    customCheckedColor_ = true;
+    checkedColor_ = {{r, g, b, a}};
     return *this;
 }
 
@@ -63,7 +67,8 @@ AbstractButton& PushButton::setText(const std::string& text)
 
 void PushButton::render2DScene(ptgl::Renderer2D* r)
 {
-    if (!isEnabled() || !isVisible()) return;
+    if (!isVisible())
+        return;
 
     this->updatePos();
 
@@ -73,24 +78,26 @@ void PushButton::render2DScene(ptgl::Renderer2D* r)
     int w = this->width();
     int h = this->height();
 
-    r->setStrokeColor(0.3, 0.3, 0.3, 0.8);
-    r->setStrokeWeight(1);
+    r->setStrokeColor(isPicked() ? theme().accent : theme().border);
+    r->setStrokeWeight(isPicked() ? 2 : 1);
 
     if (isDown() || isChecked()) {
-        r->setFillColor(checkedColor_);
+        r->setFillColor(customCheckedColor_ ? checkedColor_ : theme().checked);
     } else {
-        r->setFillColor(color_);
+        r->setFillColor(customColor_ ? color_ : theme().field);
     }
     r->setRectMode(ptgl::Renderer2D::Mode::Corner);
     r->drawRect(x,y,w,h);
 
     // render text
-    r->setTextColor(0,0,0);
+    r->setTextColor(isEnabled() ? theme().text : theme().muted);
 
-    int textSize = this->height() * 0.9;
+    int textSize = std::min(height() - 2, theme().pixels(theme().fontSize));
     int dy = (this->height() - textSize)/2;
     r->setTextSize(textSize);
+    r->beginScissor(x + 2, y + 1, std::max(0, w - 4), std::max(0, h - 2));
     r->drawText(x+4, y + this->height() - dy, text());
+    r->endScissor();
 }
 
 }

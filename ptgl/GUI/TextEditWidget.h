@@ -25,17 +25,35 @@ public:
     virtual void setEnableEditText(bool enable);
     bool enableEditText() const { return enableEditText_; }
 
-    void setTextColor(const std::array<double, 4>& color) { textColor_ = color; }
-    void setTextColor(double r, double g, double b, double a = 1.0) { textColor_ = {{r, g, b, a}}; }
+    void setTextColor(const std::array<double, 4> &color)
+    {
+        customTextColor_ = true;
+        textColor_ = color;
+    }
+    void setTextColor(double r, double g, double b, double a = 1.0) { setTextColor({{r, g, b, a}}); }
     const std::array<double, 4>& textColor() const { return textColor_; }
 
-    void setColor(const std::array<double, 4>& color) { color_ = color; }
-    void setColor(double r, double g, double b, double a = 1.0) { color_ = {{r, g, b, a}}; }
+    void setColor(const std::array<double, 4> &color)
+    {
+        customColor_ = true;
+        color_ = color;
+    }
+    void setColor(double r, double g, double b, double a = 1.0) { setColor({{r, g, b, a}}); }
     const std::array<double, 4>& color() const { return color_; }
 
-    void setEditingColor(const std::array<double, 4>& color) { editingColor_ = color; }
-    void setEditingColor(double r, double g, double b, double a = 1.0) { editingColor_ = {{r, g, b, a}}; }
+    void setEditingColor(const std::array<double, 4> &color)
+    {
+        customEditingColor_ = true;
+        editingColor_ = color;
+    }
+    void setEditingColor(double r, double g, double b, double a = 1.0) { setEditingColor({{r, g, b, a}}); }
     const std::array<double, 4>& editingColor() const { return editingColor_; }
+
+    bool isEditing() const { return editStarted_; }
+    void beginEdit();
+    void cancelEdit();
+    void commitEdit();
+    void cancelInteraction() override;
 
     // (currentText, prevText)
     void setOnTextChangedFunction(std::function<void (const std::string&, const std::string&)> func);
@@ -56,6 +74,14 @@ protected:
     virtual void keyPressEvent(ptgl::GraphicsItemKeyEvent* e) override;
 
     void finishTextEdit();
+    void mouseMoveEvent(ptgl::GraphicsItemMouseEvent *e) override;
+    void textInputEvent(const std::string &text) override;
+    void textCompositionEvent(const std::string &text, int cursor) override;
+    size_t cursorAt(int x) const;
+    std::string composition_;
+    int compositionCursor_ = 0;
+    double scrollX_ = 0;
+    std::vector<std::pair<size_t, double>> positions_;
 
     std::string prevText_;
     std::string text_;
@@ -64,6 +90,7 @@ protected:
     std::string regexText_;
 
     bool enableEditText_ = true;
+    bool customTextColor_ = false, customColor_ = false, customEditingColor_ = false;
 
     std::array<double, 4> textColor_;
     std::array<double, 4> color_;

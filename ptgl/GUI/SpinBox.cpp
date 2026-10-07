@@ -83,7 +83,7 @@ void SpinBox::setSize(int width, int height)
     spinUpButton_->setSize(spinBoxSize_, spinBoxSize_);
     spinDownButton_->setSize(spinBoxSize_, spinBoxSize_);
 
-    textEdit_->setSize(width - spinBoxSize_, height);
+    textEdit_->setSize(std::max(0, width - spinBoxSize_), height);
     textEdit_->setLocalPos(0, 0);
 }
 
@@ -104,14 +104,24 @@ AbstractSlider& SpinBox::setValue(int value, bool callCallback)
 
 void SpinBox::onSpinUpButtonClicled(bool)
 {
-    AbstractSlider::setValue(this->value()+1);
+    if (value() < maximum())
+        AbstractSlider::setValue(value() + 1);
     textEdit_->setText(std::to_string(this->value()), false);
 }
 
 void SpinBox::onSpinDownButtonClicled(bool)
 {
-    AbstractSlider::setValue(this->value()-1);
+    if (value() > minimum())
+        AbstractSlider::setValue(value() - 1);
     textEdit_->setText(std::to_string(this->value()), false);
+}
+
+void SpinBox::layout()
+{
+    updatePos();
+    int sph = spinBoxSize_ * 2 + spinBoxSpacing_;
+    spinUpButton_->setLocalPos(width() - spinBoxSize_, (height() - sph) / 2);
+    spinDownButton_->setLocalPos(width() - spinBoxSize_, (height() - sph) / 2 + sph - spinBoxSize_);
 }
 
 void SpinBox::render2DScene(ptgl::Renderer2D* r)
@@ -133,28 +143,6 @@ void SpinBox::render2DScene(ptgl::Renderer2D* r)
     r->setFillColor(color_);
     r->setRectMode(ptgl::Renderer2D::Mode::Corner);
     r->drawRect(x,y,w,h);
-
-//    int localX = 0;
-
-    // [Value]
-#if 0
-    int value = this->value();
-    std::string text = std::to_string(value);
-    int tx = x + localX + 2*spinBoxSpacing_;
-    int ty = y + this->height() - (this->height() - spinTextSize_)/2;
-    r->setTextSize(spinTextSize_);
-    r->setTextColor(0.2,0.2,0.2);
-    r->drawText(tx, ty, text);
-#endif
-
-    // [SpinBox]
-    int sph = spinBoxSize_*2 + spinBoxSpacing_;
-    int sux = w - spinBoxSize_;
-    int suy = (h - sph)/2;
-    int sdy = (h - sph)/2+sph-spinBoxSize_;
-    spinUpButton_->setLocalPos(sux, suy);
-    spinDownButton_->setLocalPos(sux, sdy);
-//    localX += spinBoxSize_;
 }
 
 void SpinBox::renderPicking2DScene(ptgl::Renderer2D* r)

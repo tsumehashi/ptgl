@@ -6,6 +6,9 @@
 #include "Renderer3D.h"
 #include "DefaultShaderSource.h"
 #include "Font.h"
+#include <fstream>
+#include <filesystem>
+#include <iterator>
 
 #include "thirdparty/Core/nanovg/src/nanovg.h"
 
@@ -39,6 +42,9 @@ void Renderer2D::finalizeConfiguration()
     if (renderNvgContext_) nvgDeleteGLES2(renderNvgContext_);
     if (pickingNvgContext_) nvgDeleteGLES2(pickingNvgContext_);
     renderNvgContext_ = pickingNvgContext_ = nvgContext_ = nullptr;
+    fontData_.clear();
+    scissors_.clear();
+    textOffsetCacheMap_.clear();
 }
 
 void Renderer2D::initializeConfiguration()
@@ -739,12 +745,28 @@ const Eigen::Affine3d& Renderer2D::transformation() const
 
 void Renderer2D::beginScissor(int x, int y, int w, int h)
 {
+    if (!scissors_.empty()) {
+        const auto &p = scissors_.back();
+        int right = std::min(x + w, p[0] + p[2]), bottom = std::min(y + h, p[1] + p[3]);
+        x = std::max(x, p[0]);
+        y = std::max(y, p[1]);
+        w = std::max(0, right - x);
+        h = std::max(0, bottom - y);
+    }
+    scissors_.push_back({x, y, w, h});
     nvgScissor(nvgContext_, x, y, w, h);
 }
 
 void Renderer2D::endScissor()
 {
-    nvgResetScissor(nvgContext_);
+    if (!scissors_.empty())
+        scissors_.pop_back();
+    if (scissors_.empty())
+        nvgResetScissor(nvgContext_);
+    else {
+        const auto &p = scissors_.back();
+        nvgScissor(nvgContext_, p[0], p[1], p[2], p[3]);
+    }
 }
 
 bool Renderer2D::isPickingMode() const
@@ -765,6 +787,7 @@ void Renderer2D::setPickColor(const std::array<double, 4>& color)
 // for GraphicsView
 void Renderer2D::beginRender(RenderState state)
 {
+    scissors_.clear();
     setRenderState(state);
 
     tf_.clear();

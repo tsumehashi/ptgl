@@ -2,6 +2,9 @@
 #define PTGL_DRIVER_GLFWGRAPHICSDRIVER_H_
 
 #include <thread>
+#include <deque>
+#include <functional>
+#include "ptgl/GUI/Utf8.h"
 #include <mutex>
 #include <atomic>
 #include <chrono>
@@ -11,6 +14,11 @@
 #include "ptgl/Core/Event.h"
 #include "ptgl/Core/GLPath.h"
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include "WindowsIme.h"
+#endif
 
 namespace ptgl {
 
@@ -41,6 +49,47 @@ protected:
     virtual int height() const override { return height_; }
     virtual int frameRate() const override { return frameRate_; }
 
+    std::string clipboardText() const override
+    {
+        const char *s = glfwWindow_ ? glfwGetClipboardString(glfwWindow_) : nullptr;
+        return s ? s : "";
+    }
+    void setClipboardText(const std::string &s) override
+    {
+        if (glfwWindow_)
+            glfwSetClipboardString(glfwWindow_, s.c_str());
+    }
+    bool hasTextInputEvents() const override { return true; }
+    void setTextInputRect(int x, int y, int w, int h) override
+    {
+        (void)w;
+#ifdef _WIN32
+        if (ime_ && glfwWindow_) {
+            int sw, sh;
+            glfwGetWindowSize(glfwWindow_, &sw, &sh);
+            ime_->setCaret(width_ ? x * sw / width_ : x, height_ ? y * sh / height_ : y,
+                           height_ ? h * sh / height_ : h);
+        }
+#else
+        (void)x;
+        (void)y;
+        (void)h;
+#endif
+    }
+    void cancelTextComposition() override
+    {
+#ifdef _WIN32
+        if (ime_)
+            ime_->cancel();
+#endif
+    }
+#ifdef _WIN32
+    std::unique_ptr<detail::WindowsIme> ime_;
+#endif
+    static void characterEvent(GLFWwindow *window, unsigned int codepoint);
+    static void focusEvent(GLFWwindow *window, int focused);
+    std::deque<std::function<void()>> events_;
+
     // GLFW event
     static void mouseButtonEvent(GLFWwindow *window, int button, int action, int mods);
     static void cursorPosEvent(GLFWwindow *window, double x, double y);
@@ -62,12 +111,6 @@ protected:
     double mouseCursorY_ = 0;
 
     std::atomic<bool> requireResizeEvent_;
-    std::atomic<bool> requireMousePressEvent_;
-    std::atomic<bool> requireMouseMoveEvent_;
-    std::atomic<bool> requireMouseReleaseEvent_;
-    std::atomic<bool> requireMouseWheelEvent_;
-    std::atomic<bool> requireMouseKeyPressEvent_;
-    std::atomic<bool> requireDropEvent_;
 
     std::string windowTitle_;
     int windowWidth_ = 640, windowHeight_ = 480; // GLFW screen coordinates.
@@ -94,12 +137,6 @@ GLFWGraphicsDriver::GLFWGraphicsDriver()
     windowTitle_ = "GraphicsView";
 
     requireResizeEvent_ = false;
-    requireMousePressEvent_ = false;
-    requireMouseMoveEvent_ = false;
-    requireMouseReleaseEvent_ = false;
-    requireMouseWheelEvent_ = false;
-    requireMouseKeyPressEvent_ = false;
-    requireDropEvent_ = false;
 
     isMousePressed_ = false;
     pressedMouseButton_ = ptgl::MouseEvent::MouseButton::NoButton;
@@ -235,6 +272,16 @@ void GLFWGraphicsDriver::execute()
 
         // set this pointer
         glfwSetWindowUserPointer(glfwWindow_, this);
+#ifdef _WIN32
+        ime_ = std::make_unique<detail::WindowsIme>(
+            glfwGetWin32Window(glfwWindow_),
+            [this](std::string text) {
+                events_.push_back([this, text] { graphicsView()->textInput(text); });
+            },
+            [this](std::string text, int cursor) {
+                events_.push_back([this, text, cursor] { graphicsView()->textComposition(text, cursor); });
+            });
+#endif
 
         // set callback
         glfwSetMouseButtonCallback(glfwWindow_, mouseButtonEvent);
@@ -242,6 +289,8 @@ void GLFWGraphicsDriver::execute()
         glfwSetCursorPosCallback(glfwWindow_, cursorPosEvent);
         glfwSetScrollCallback(glfwWindow_, scrollEvent);
         glfwSetKeyCallback(glfwWindow_, keyEvent);
+        glfwSetCharCallback(glfwWindow_, characterEvent);
+        glfwSetWindowFocusCallback(glfwWindow_, focusEvent);
         glfwSetDropCallback(glfwWindow_, dropEvent);
 
         glfwSetFramebufferSizeCallback(glfwWindow_, resizeEvent);
@@ -291,6 +340,9 @@ void GLFWGraphicsDriver::execute()
         }
 
         executeGraphicsViewFinalizeEvent();
+#ifdef _WIN32
+        ime_.reset();
+#endif
         glfwDestroyWindow(glfwWindow_);
         glfwWindow_ = nullptr;
         terminated_ = true;
@@ -341,23 +393,26 @@ void GLFWGraphicsDriver::mouseButtonEvent(GLFWwindow* window, int button, int ac
         break;
     }
 
-    auto event = driver->getGraphicsViewMouseEvent();
-
     const int modifyKey = modKeyMap(mods);
-
+    const int px = int(driver->mouseCursorX_), py = int(driver->mouseCursorY_);
     if (action == GLFW_PRESS) {
         driver->isMousePressed_ = true;
         driver->pressedMouseButton_ = btn;
-        event->setPressEvent((int)driver->mouseCursorX_, (int)driver->mouseCursorY_, btn, modifyKey);
-
-        driver->requireMousePressEvent_ = true;
     } else if (action == GLFW_RELEASE) {
         driver->isMousePressed_ = false;
-        driver->pressedMouseButton_ = ptgl::MouseEvent::MouseButton::NoButton;
-        event->setReleaseEvent((int)driver->mouseCursorX_, (int)driver->mouseCursorY_, btn, modifyKey);
-
-        driver->requireMouseReleaseEvent_ = true;
+        driver->pressedMouseButton_ = MouseEvent::MouseButton::NoButton;
     }
+    driver->events_.push_back([driver, px, py, btn, modifyKey, action] {
+        auto event = driver->getGraphicsViewMouseEvent();
+        event->setAccepted(false);
+        if (action == GLFW_PRESS) {
+            event->setPressEvent(px, py, btn, modifyKey);
+            driver->executeGraphicsViewMousePressEvent(event);
+        } else if (action == GLFW_RELEASE) {
+            event->setReleaseEvent(px, py, btn, modifyKey);
+            driver->executeGraphicsViewMouseReleaseEvent(event);
+        }
+    });
 }
 
 void GLFWGraphicsDriver::cursorPosEvent(GLFWwindow* window, double x, double y)
@@ -371,11 +426,14 @@ void GLFWGraphicsDriver::cursorPosEvent(GLFWwindow* window, double x, double y)
     driver->mouseCursorX_ = w > 0 ? x * fw / w : 0;
     driver->mouseCursorY_ = h > 0 ? y * fh / h : 0;
 
-    auto event = driver->getGraphicsViewMouseEvent();
-
-    event->setMoveEvent((int)driver->mouseCursorX_, (int)driver->mouseCursorY_, driver->pressedMouseButton_);
-
-    driver->requireMouseMoveEvent_ = true;
+    int px = int(driver->mouseCursorX_), py = int(driver->mouseCursorY_);
+    auto button = driver->pressedMouseButton_;
+    driver->events_.push_back([driver, px, py, button] {
+        auto e = driver->getGraphicsViewMouseEvent();
+        e->setMoveEvent(px, py, button);
+        e->setAccepted(false);
+        driver->executeGraphicsViewMouseMoveEvent(e);
+    });
 }
 
 void GLFWGraphicsDriver::cursorEnterEvent(GLFWwindow* window, int enter)
@@ -392,38 +450,38 @@ void GLFWGraphicsDriver::scrollEvent(GLFWwindow* window, double x, double y)
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
 
-    auto event = driver->getGraphicsViewWheelEvent();
-
-    int delta = 80*y;
-    event->setWheelEvent(x, y, delta);
-
-    driver->requireMouseWheelEvent_ = true;
+    int px = int(driver->mouseCursorX_), py = int(driver->mouseCursorY_);
+    int delta = int(80 * (y != 0 ? y : x));
+    auto orientation = y != 0 ? WheelEvent::Vertical : WheelEvent::Horizontal;
+    driver->events_.push_back([driver, px, py, delta, orientation] {
+        auto e = driver->getGraphicsViewWheelEvent();
+        e->setWheelEvent(px, py, delta, orientation);
+        e->setAccepted(false);
+        driver->executeGraphicsViewWheelEvent(e);
+    });
 }
 
 void GLFWGraphicsDriver::keyEvent(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
+#ifdef _WIN32
+    if (driver->ime_ && driver->ime_->composing())
+        return;
+#endif
 
     const int modifyKey = modKeyMap(mods);
     const ptgl::Key ptglKey = GLFWGraphicsDriver::keymap(key, scancode);
 
-    if (action == GLFW_PRESS) {
-        auto event = driver->getGraphicsViewKeyEvent();
-        event->setKeyPressEvent(ptglKey, ptgl::KeyEvent::KeyAction::KeyPress, modifyKey);
-        driver->requireMouseKeyPressEvent_ = true;
-    } else if (action == GLFW_RELEASE) {
-#if 0
-        auto event = driver->getGraphicsViewKeyEvent();
-        event->setKeyPressEvent(ptglKey, ptgl::KeyEvent::KeyAction::KeyRelease, modifyKey);
-        driver->requireMouseKeyPressEvent_ = true;
-#endif
-    } else if (action == GLFW_REPEAT) {
-        auto event = driver->getGraphicsViewKeyEvent();
-        event->setKeyPressEvent(ptglKey, ptgl::KeyEvent::KeyAction::KeyRepeat, modifyKey);
-        driver->requireMouseKeyPressEvent_ = true;
-    }
-
+    const auto type = action == GLFW_RELEASE  ? KeyEvent::KeyAction::KeyRelease
+                      : action == GLFW_REPEAT ? KeyEvent::KeyAction::KeyRepeat
+                                              : KeyEvent::KeyAction::KeyPress;
+    driver->events_.push_back([driver, ptglKey, type, modifyKey] {
+        auto e = driver->getGraphicsViewKeyEvent();
+        e->setKeyPressEvent(ptglKey, type, modifyKey);
+        e->setAccepted(false);
+        driver->executeGraphicsViewKeyPressEvent(e);
+    });
 }
 
 void GLFWGraphicsDriver::resizeEvent(GLFWwindow* window, int width, int height) {
@@ -438,13 +496,14 @@ void GLFWGraphicsDriver::dropEvent(GLFWwindow *window, int count, const char** p
     GLFWGraphicsDriver* driver = static_cast<GLFWGraphicsDriver*>(glfwGetWindowUserPointer(window));
     if (!driver) return;
 
-    auto event = driver->getGraphicsViewDropEvent();
     std::vector<std::string> dropPaths;
-    for (int i = 0; i < count; ++i) {
-        dropPaths.push_back(paths[i]);
-    }
-    event->setDropEvent(dropPaths);
-    driver->requireDropEvent_ = true;
+    for (int i = 0; i < count; ++i)
+        dropPaths.emplace_back(paths[i]);
+    driver->events_.push_back([driver, dropPaths] {
+        auto e = driver->getGraphicsViewDropEvent();
+        e->setDropEvent(dropPaths);
+        driver->executeGraphicsViewDropEvent(e);
+    });
 }
 
 void GLFWGraphicsDriver::handleEvents()
@@ -455,34 +514,25 @@ void GLFWGraphicsDriver::handleEvents()
         requireResizeEvent_ = false;
     }
 
-    if (requireMousePressEvent_) {
-        executeGraphicsViewMousePressEvent(getGraphicsViewMouseEvent());
-        requireMousePressEvent_ = false;
-    }
+    auto pending = std::move(events_);
+    events_.clear();
+    for (auto &event : pending)
+        event();
+}
 
-    if (requireMouseMoveEvent_) {
-        executeGraphicsViewMouseMoveEvent(getGraphicsViewMouseEvent());
-        requireMouseMoveEvent_ = false;
-    }
-
-    if (requireMouseReleaseEvent_) {
-        executeGraphicsViewMouseReleaseEvent(getGraphicsViewMouseEvent());
-        requireMouseReleaseEvent_ = false;
-    }
-
-    if (requireMouseWheelEvent_) {
-        executeGraphicsViewWheelEvent(getGraphicsViewWheelEvent());
-        requireMouseWheelEvent_ = false;
-    }
-
-    if (requireMouseKeyPressEvent_) {
-        executeGraphicsViewKeyPressEvent(getGraphicsViewKeyEvent());
-        requireMouseKeyPressEvent_ = false;
-    }
-
-    if (requireDropEvent_) {
-        executeGraphicsViewDropEvent(getGraphicsViewDropEvent());
-        requireDropEvent_ = false;
+void GLFWGraphicsDriver::characterEvent(GLFWwindow *window, unsigned int c)
+{
+    auto driver = static_cast<GLFWGraphicsDriver *>(glfwGetWindowUserPointer(window));
+    if (driver && c >= 32 && c != 127)
+        driver->events_.push_back([driver, c] { driver->graphicsView()->textInput(gui::utf8::encode(c)); });
+}
+void GLFWGraphicsDriver::focusEvent(GLFWwindow *window, int focused)
+{
+    auto driver = static_cast<GLFWGraphicsDriver *>(glfwGetWindowUserPointer(window));
+    if (driver && !focused) {
+        driver->isMousePressed_ = false;
+        driver->pressedMouseButton_ = MouseEvent::MouseButton::NoButton;
+        driver->events_.push_back([driver] { driver->graphicsView()->cancelInput(); });
     }
 }
 

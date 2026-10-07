@@ -28,7 +28,9 @@ public:
 
     virtual void click();
     virtual void setChecked(bool checked);
+    void setCheckedSilently(bool checked) { checked_ = checked; }
     virtual void toggle();
+    void cancelInteraction() override;
 
     AbstractButton& setOnClickedFunction(std::function<void (bool)> func);
     AbstractButton& setOnPressedFunction(std::function<void ()> func);
@@ -40,6 +42,9 @@ protected:
     // Mouse event
     virtual void mousePressEvent(ptgl::GraphicsItemMouseEvent* e) override;
     virtual void mouseReleaseEvent(ptgl::GraphicsItemMouseEvent* e) override;
+    void mouseMoveEvent(ptgl::GraphicsItemMouseEvent *e) override;
+    void keyPressEvent(ptgl::GraphicsItemKeyEvent *e) override;
+    bool armed_ = false;
 
     bool checkable_ = false;
     bool checked_ = false;

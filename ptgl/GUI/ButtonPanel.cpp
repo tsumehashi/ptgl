@@ -26,6 +26,7 @@ PushButtonPtr ButtonPanel::addButton(const std::string& name, bool checkable)
     PushButtonPtr ptr = findButton(name);
     if (!ptr) {    // not find
         PushButtonPtr button = std::make_shared<PushButton>(name);
+        button->setName(name);
         buttons_.push_back(button);
         nameToButtonMap_[name] = button;
 
@@ -84,6 +85,7 @@ void ButtonPanel::removeButton(const std::string& name)
         removeWidget(*itr);
         buttons_.erase(itr);
         nameToButtonMap_.erase(name);
+        radioButtonGroupMap_.erase(name);
     }
 }
 
@@ -94,6 +96,7 @@ void ButtonPanel::clearButtons()
     }
     buttons_.clear();
     nameToButtonMap_.clear();
+    radioButtonGroupMap_.clear();
 }
 
 }

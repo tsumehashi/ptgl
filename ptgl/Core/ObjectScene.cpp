@@ -169,6 +169,23 @@ bool ObjectScene::removeObject(const SceneObjectPtr& object)
 
 bool ObjectScene::removeSelectedObject() { return removeObject(selected_); }
 
+double ObjectScene::objectOpacity(const SceneObjectPtr &object) const
+{
+    if (!object)
+        throw std::invalid_argument("Null object");
+    return object == selected_ ? originalOpacity_ : object->opacity();
+}
+void ObjectScene::setObjectOpacity(const SceneObjectPtr &object, double opacity)
+{
+    if (!object || !std::isfinite(opacity) || opacity < 0 || opacity > 1)
+        throw std::invalid_argument("Invalid object opacity");
+    if (object == selected_) {
+        originalOpacity_ = opacity;
+        object->setOpacity(opacity * selectionOpacity_);
+    } else
+        object->setOpacity(opacity);
+}
+
 void ObjectScene::clear()
 {
     const auto objects = objects_;

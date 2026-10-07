@@ -24,6 +24,13 @@ GraphicsItem::~GraphicsItem()
 
 void GraphicsItem::addChild(GraphicsItemPtr item)
 {
+    if (!item)
+        return;
+    for (auto p = this; p; p = p->parent_)
+        if (p == item.get())
+            throw std::invalid_argument("Cyclic item hierarchy");
+    if (item->parent_ == this)
+        return;
     if (item->parentItem()) {
         item->parentItem()->removeChild(item);
     }
@@ -39,6 +46,8 @@ void GraphicsItem::removeChild(GraphicsItemPtr item)
 {
     auto itr = std::find(children_.begin(), children_.end(), item);
     if (itr != children_.end()) {
+        if (graphicsView_)
+            graphicsView_->clearItemInput(*itr);
         (*itr)->parent_ = nullptr;
         GraphicsItem::traverse(*itr, [&](GraphicsItemPtr ptr){
             ptr->setGraphicsView(nullptr);
@@ -52,26 +61,17 @@ void GraphicsItem::setVisible(bool visible)
 {
     if (visible_ != visible && graphicsView_) graphicsView_->notifySceneChanged();
     visible_ = visible;
-    for (auto ptr : children_) {
-        ptr->setVisible(visible);
-    }
 }
 
 void GraphicsItem::setEnabled(bool enabled)
 {
     if (enabled_ != enabled && graphicsView_) graphicsView_->notifySceneChanged();
     enabled_ = enabled;
-    for (auto ptr : children_) {
-        ptr->setEnabled(enabled);
-    }
 }
 
 void GraphicsItem::setPickable(bool enable)
 {
     pickable_ = enable;
-    for (auto ptr : children_) {
-        ptr->setPickable(enable);
-    }
 }
 
 void GraphicsItem::setOpacity(double opacity)

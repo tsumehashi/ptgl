@@ -86,6 +86,8 @@ public:
     // The original opacity is restored when selection ends.
     void setSelectionOpacity(double opacity);
     double selectionOpacity() const { return selectionOpacity_; }
+    double objectOpacity(const SceneObjectPtr &object) const;
+    void setObjectOpacity(const SceneObjectPtr &object, double opacity);
     void setEditingEnabled(bool enabled);
     bool editingEnabled() const { return editingEnabled_; }
     const handle::TransformHandlePtr& transformHandle() const { return handle_; }

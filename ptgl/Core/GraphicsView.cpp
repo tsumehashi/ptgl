@@ -1,4 +1,5 @@
 #include "GraphicsView.h"
+#include "ptgl/GUI/Widget.h"
 #include "ObjectScene.h"
 #include <set>
 #include <iostream>
@@ -183,6 +184,7 @@ void GraphicsView::removeGraphicsItem(GraphicsItemPtr item)
 
     auto itr = std::find(graphicsItems_.begin(), graphicsItems_.end(), item);
     if (itr != graphicsItems_.end()) {
+        clearItemInput(item);
         graphicsItems_.erase(itr);
         if (objectScene_) objectScene_->itemRemoved(item);
         auto belongs = [&](const GraphicsItemPtr& candidate) {
@@ -215,6 +217,10 @@ void GraphicsView::cancelGraphicsItemDrag()
 {
     auto captured = std::move(mouseGraphicsItem_);
     prevMousePressGraphicsItem_.reset();
+    if (captured && dynamic_cast<gui::Widget *>(captured.get())) {
+        captured->cancelInteraction();
+        return;
+    }
     if (captured) {
         graphicsItemMouseEvent_->setReleaseEvent(mouseX_, mouseY_, MouseEvent::MouseButton::LeftButton);
         captured->executeMouseReleaseEvent(graphicsItemMouseEvent_.get());
@@ -316,6 +322,7 @@ void GraphicsView::executeFinalizeEvent()
 
 void GraphicsView::updateSceneState()
 {
+    updateGui();
     // update camera
     camera()->updateViewport();
     camera()->update();
@@ -326,11 +333,7 @@ void GraphicsView::updateSceneState()
     // traverse GraphicsItem
     traversedItems_.clear();
     for (auto& item : graphicsItems_) {
-        GraphicsItem::traverse(item, [&](GraphicsItemPtr ptr){
-            if (ptr->isEnabled()) {
-                traversedItems_.push_back(ptr);
-             }
-        });
+        GraphicsItem::traverse(item, [&](GraphicsItemPtr ptr) { traversedItems_.push_back(ptr); });
     }
 
 }
@@ -508,6 +511,8 @@ void GraphicsView::executePickingPass()
 
     // picking
     calcPickedDepth();
+    if (auto widget = guiAt(mouseX_, mouseY_))
+        pickedGraphicsItem_ = widget;
     handlePickingUpEvent();
 
 #endif    // PTGL_DBG_PICKING
@@ -682,11 +687,21 @@ void GraphicsView::executeRender2DScene(ptgl::Renderer2D* r)
     renderer2D_->beginRender(Renderer2D::RenderSceneState);
 
     // render GraphicsItem
-    for (auto item : traversedItems_) {
-        if (item->isEnabled() && item->isVisible()) {
-            item->render2DScene(r);
+    for (bool popup : {false, true})
+        for (auto item : traversedItems_) {
+            if (item->isVisible() && (item->isEnabled() || dynamic_cast<gui::Widget *>(item.get()))) {
+                auto widget = dynamic_cast<gui::Widget *>(item.get());
+                if (widget ? widget->isPopupLayer() != popup : popup)
+                    continue;
+                if (widget) {
+                    auto clip = widget->clipRect();
+                    r->beginScissor(clip.x, clip.y, clip.w, clip.h);
+                }
+                item->render2DScene(r);
+                if (widget)
+                    r->endScissor();
+            }
         }
-    }
 
     // render GraphicsView
     render2DScene(r);
@@ -766,7 +781,14 @@ void GraphicsView::executeRenderPicking2DScene(ptgl::Renderer2D* r)
             uint32_t pickId = (uint32_t)pickIdToItemList_.size();
             auto pickColor = pickIdToColor(pickId);
             renderer2D_->setPickColor(pickColor);
+            auto widget = dynamic_cast<gui::Widget *>(item.get());
+            if (widget) {
+                auto clip = widget->clipRect();
+                r->beginScissor(clip.x, clip.y, clip.w, clip.h);
+            }
             item->renderPicking2DScene(r);
+            if (widget)
+                r->endScissor();
             pickIdToItemList_.push_back(item);
         }
     }
@@ -784,6 +806,27 @@ void GraphicsView::executeRenderScenePostProcess(ptgl::Renderer3D* r)
 // input event
 void GraphicsView::executeMousePressEvent(MouseEvent* e)
 {
+    updateGui();
+    auto hit = guiAt(e->x(), e->y());
+    for (auto &item : getTraversedGraphicsItems())
+        if (auto popup = dynamic_cast<gui::Widget *>(item.get()); popup && popup->isPopup()) {
+            bool inside = false;
+            for (auto p = hit.get(); p; p = p->parentItem())
+                if (p == popup->parentItem())
+                    inside = true;
+            if (!inside)
+                popup->setVisible(false);
+        }
+    if (auto widget = hit) {
+        guiPointerCaptured_ = true;
+        mouseX_ = e->x();
+        mouseY_ = e->y();
+        pickedGraphicsItem_ = widget;
+        executeGraphicsItemMousePressEvent(e);
+        e->setAccepted(true);
+        return;
+    }
+    guiPointerCaptured_ = false;
     if (e->button() == MouseEvent::MouseButton::RightButton
      ||    e->button() == MouseEvent::MouseButton::MiddleButton) {
         if (enableCameraManipulate_) {
@@ -814,6 +857,15 @@ void GraphicsView::executeMousePressEvent(MouseEvent* e)
 
 void GraphicsView::executeMouseMoveEvent(MouseEvent* e)
 {
+    updateGui();
+    if (guiPointerCaptured_ || (e->button() == MouseEvent::MouseButton::NoButton && guiAt(e->x(), e->y()))) {
+        mouseX_ = e->x();
+        mouseY_ = e->y();
+        pickedGraphicsItem_ = guiAt(e->x(), e->y());
+        executeGraphicsItemMouseMoveEvent(e);
+        e->setAccepted(true);
+        return;
+    }
     if (e->button() == MouseEvent::MouseButton::RightButton
     ||    e->button() == MouseEvent::MouseButton::MiddleButton) {
         if (enableCameraManipulate_) {
@@ -832,6 +884,14 @@ void GraphicsView::executeMouseMoveEvent(MouseEvent* e)
 
 void GraphicsView::executeMouseReleaseEvent(MouseEvent* e)
 {
+    if (guiPointerCaptured_) {
+        mouseX_ = e->x();
+        mouseY_ = e->y();
+        executeGraphicsItemMouseReleaseEvent(e);
+        guiPointerCaptured_ = false;
+        e->setAccepted(true);
+        return;
+    }
     if (e->button() == MouseEvent::MouseButton::RightButton ||
             e->button() == MouseEvent::MouseButton::MiddleButton) {
         if (enableCameraManipulate_) {
@@ -850,6 +910,16 @@ void GraphicsView::executeMouseReleaseEvent(MouseEvent* e)
 
 void GraphicsView::executeWheelEvent(WheelEvent* e)
 {
+    updateGui();
+    if (auto target = guiAt(e->x(), e->y())) {
+        graphicsItemWheelEvent_->setWheelEvent(e->x(), e->y(), e->delta(), e->orientation());
+        graphicsItemWheelEvent_->setAccepted(false);
+        for (auto p = target.get(); p && !graphicsItemWheelEvent_->isAccepted(); p = p->parentItem())
+            if (p->isEnabledWheelEvent())
+                p->wheelEvent(graphicsItemWheelEvent_.get());
+        e->setAccepted(true);
+        return;
+    }
     graphicsItemWheelEvent_->setWheelEvent(e->x(), e->y(), e->delta(), e->orientation());
     graphicsItemWheelEvent_->setAccepted(false);
 #if 0
@@ -870,6 +940,22 @@ void GraphicsView::executeWheelEvent(WheelEvent* e)
 
 void GraphicsView::executeKeyPressEvent(KeyEvent* e)
 {
+    updateGui();
+    if (e->key() == Key::Key_Tab && e->keyAction() != KeyEvent::KeyAction::KeyRelease) {
+        GraphicsItemList focusable;
+        for (auto &p : getTraversedGraphicsItems())
+            if (auto w = dynamic_cast<gui::Widget *>(p.get());
+                w && w->isFocusable() && w->isVisible() && w->isEnabled() && w->isPickable())
+                focusable.push_back(p);
+        if (!focusable.empty()) {
+            auto it = std::find(focusable.begin(), focusable.end(), focusedGraphicsItem_);
+            int n = int(focusable.size()), i = it == focusable.end() ? -1 : int(it - focusable.begin());
+            i = (e->modifierKey() & ModifierKey_Shift) ? (i < 0 ? n - 1 : (i + n - 1) % n) : (i + 1) % n;
+            setKeyboardFocus(focusable[i]);
+            e->setAccepted(true);
+            return;
+        }
+    }
     graphicsItemKeyEvent_->setKeyPressEvent(e->key(), e->keyAction(), e->modifierKey());
     graphicsItemKeyEvent_->setAccepted(false);
     if (focusedGraphicsItem_ && focusedGraphicsItem_->isPickable() && focusedGraphicsItem_->isEnabledKeyEvent()) {
@@ -877,7 +963,8 @@ void GraphicsView::executeKeyPressEvent(KeyEvent* e)
     }
 
     e->setAccepted(graphicsItemKeyEvent_->isAccepted());
-    keyPressEvent(e);
+    if (!e->isAccepted())
+        keyPressEvent(e);
 }
 
 void GraphicsView::executeDropEvent(DropEvent* e)
@@ -887,6 +974,8 @@ void GraphicsView::executeDropEvent(DropEvent* e)
 
 void GraphicsView::executePickingUpEvent(PickingEvent* e)
 {
+    if (dynamic_cast<gui::Widget *>(e->pickedGraphicsItem().get()))
+        return;
     if (objectScene_) objectScene_->pick(e->pickedGraphicsItem());
     pickingUpEvent(e);
 }
@@ -1059,24 +1148,7 @@ void GraphicsView::executeGraphicsItemMousePressEvent(MouseEvent* e)
 
     if (e->button() == MouseEvent::MouseButton::LeftButton) {
 
-        // pick changed
-        if (focusedGraphicsItem_ != pickedGraphicsItem) {
-            // select enter/leave event
-            if (focusedGraphicsItem_) {
-                // set select leave event
-                focusedGraphicsItem_->setPicked(false);
-                focusedGraphicsItem_->selectLeaveEvent(graphicsItemSelectEvent_.get());
-                focusedGraphicsItem_ = nullptr;
-            }
-
-            // set select enter event
-            if (pickedGraphicsItem && pickedGraphicsItem->isPickable()) {
-                pickedGraphicsItem->setPicked(true);
-                pickedGraphicsItem->selectEnterEvent(graphicsItemSelectEvent_.get());
-            }
-
-            focusedGraphicsItem_ = pickedGraphicsItem;
-        }
+        setKeyboardFocus(pickedGraphicsItem);
 
         // picked
         if (pickedGraphicsItem && pickedGraphicsItem->isPickable()) {
@@ -1161,8 +1233,8 @@ void GraphicsView::executeGraphicsItemMouseReleaseEvent(MouseEvent* e)
 
     // mouse event
     if (mouseGraphicsItem_) {
-        mouseGraphicsItem_->executeMouseReleaseEvent(graphicsItemMouseEvent_.get());
-        mouseGraphicsItem_ = nullptr;
+        auto captured = std::move(mouseGraphicsItem_);
+        captured->executeMouseReleaseEvent(graphicsItemMouseEvent_.get());
     }
 }
 

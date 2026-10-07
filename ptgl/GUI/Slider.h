@@ -6,14 +6,12 @@
 namespace ptgl {
 namespace gui {
 
-class GraphicsItemMouseEvent;
-class Renderer2D;
-
 class Slider;
 typedef std::shared_ptr<Slider> SliderPtr;
 
 class Slider : public AbstractSlider {
 public:
+    void layout() override;
     Slider();
     Slider(const std::string& text);
     virtual ~Slider();

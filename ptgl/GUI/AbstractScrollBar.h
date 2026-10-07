@@ -15,7 +15,10 @@ public:
     virtual ~AbstractScrollBar();
 
     virtual AbstractScrollBar& setScrolledAreaSize(int size) {
+        if (size < 0)
+            throw std::invalid_argument("Negative scroll area");
         scrolledAreaSize_ = size;
+        setScrollValue(scrollValue_);
         return *this;
     }
     int scrolledAreaSize() const { return scrolledAreaSize_; }

@@ -1,4 +1,5 @@
 #include "AbstractScrollBar.h"
+#include <algorithm>
 
 namespace ptgl {
 namespace gui {
@@ -15,13 +16,7 @@ AbstractScrollBar::~AbstractScrollBar() {
 
 AbstractScrollBar& AbstractScrollBar::setScrollValue(int value)
 {
-    scrollValue_ = value;
-    // clamp
-    if (scrollValue_ < 0) {
-        scrollValue_ = 0;
-    } else if (scrollValue_ > (scrolledAreaSize_ - scrollAreaSize())) {
-        scrollValue_ = scrolledAreaSize_ - scrollAreaSize();
-    }
+    scrollValue_ = std::clamp(value, 0, std::max(0, scrolledAreaSize_ - scrollAreaSize()));
     return *this;
 }
 

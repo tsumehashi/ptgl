@@ -150,13 +150,15 @@ void SpinSlider::onSliderValueChanged(int value)
 
 void SpinSlider::onSpinUpButtonClicled(bool)
 {
-    slider_->setValue(slider_->value()+1);
+    if (value() < maximum())
+        slider_->setValue(value() + 1);
     textEdit_->setText(std::to_string(slider_->value()), false);
 }
 
 void SpinSlider::onSpinDownButtonClicled(bool)
 {
-    slider_->setValue(slider_->value()-1);
+    if (value() > minimum())
+        slider_->setValue(value() - 1);
     textEdit_->setText(std::to_string(slider_->value()), false);
 }
 
@@ -165,6 +167,33 @@ void SpinSlider::onFocus()
     if (onFocusedFunc_) {
         onFocusedFunc_();
     }
+}
+
+void SpinSlider::layout()
+{
+    updatePos();
+    setSize(width(), height());
+    int w = width(), h = height();
+    int localX = showText_ ? 4 + titleTextWidth_ : 0;
+    // [Slider]
+    int sx = localX + sliderSpacing_;
+    int sy = h / 2;
+    slider_->setLocalPos(sx, sy);
+    localX += sliderSpacing_ + sliderLength_;
+
+    // [SpinBox]
+    int sph = spinBoxSize_ * 2 + spinBoxSpacing_;
+    int sux = localX + sliderSpacing_;
+    int suy = (h - sph) / 2;
+    int sdy = (h - sph) / 2 + sph - spinBoxSize_;
+    spinUpButton_->setLocalPos(sux, suy);
+    spinDownButton_->setLocalPos(sux, sdy);
+    localX += sliderSpacing_ + spinBoxSize_;
+
+    // [Value]
+    int textEditWidth = std::max(0, w - localX);
+    textEdit_->setSize(textEditWidth, h);
+    textEdit_->setLocalPos(localX, 0);
 }
 
 void SpinSlider::render2DScene(ptgl::Renderer2D* r)
@@ -187,7 +216,6 @@ void SpinSlider::render2DScene(ptgl::Renderer2D* r)
     r->setRectMode(ptgl::Renderer2D::Mode::Corner);
     r->drawRect(x,y,w,h);
 
-    int localX = 0;
 
     // [Title]
     if (showText_) {
@@ -209,37 +237,9 @@ void SpinSlider::render2DScene(ptgl::Renderer2D* r)
             r->drawText(tx, ty, text());
         }
 
-        localX = textSpacing + titleTextWidth_;
     }
 
-    // [Slider]
-    int sx = localX + sliderSpacing_;
-    int sy = h/2;
-    slider_->setLocalPos(sx, sy);
-    localX += sliderSpacing_ + sliderLength_;
 
-    // [SpinBox]
-    int sph = spinBoxSize_*2 + spinBoxSpacing_;
-    int sux = localX + sliderSpacing_;
-    int suy = (h - sph)/2;
-    int sdy = (h - sph)/2+sph-spinBoxSize_;
-    spinUpButton_->setLocalPos(sux, suy);
-    spinDownButton_->setLocalPos(sux, sdy);
-    localX += sliderSpacing_ + spinBoxSize_;
-
-    // [Value]
-    int textEditWidth = w - localX;
-    textEdit_->setSize(textEditWidth, h);
-    textEdit_->setLocalPos(localX, 0);
-#if 0
-    int value = slider_->value();
-    std::string text = std::to_string(value);
-    int tx = x + localX + 2*spinBoxSpacing_;
-    int ty = y + this->height() - (this->height() - spinTextSize_)/2;
-    r->setTextSize(spinTextSize_);
-    r->setTextColor(0.2,0.2,0.2);
-    r->drawText(tx, ty, text);
-#endif
 }
 
 void SpinSlider::renderPicking2DScene(ptgl::Renderer2D* r)
@@ -275,10 +275,11 @@ void SpinSlider::mousePressEvent(ptgl::GraphicsItemMouseEvent* e)
 void SpinSlider::wheelEvent(ptgl::GraphicsItemWheelEvent* e)
 {
     if (!e->isAccepted() && isHoverd()) {
-        int delta = 0.01 * (this->maximum() - this->minimum());
+        int delta = 0.01 * (double(maximum()) - minimum());
         if (delta < 1) delta = 1;
         if (e->delta() < 0) delta = -delta;
-        slider_->setValue(slider_->value() + delta, true);
+        slider_->setValue(
+            int(std::clamp(double(slider_->value()) + delta, double(minimum()), double(maximum()))), true);
         textEdit_->setText(std::to_string(slider_->value()), false);
 
         e->setAccepted(true);

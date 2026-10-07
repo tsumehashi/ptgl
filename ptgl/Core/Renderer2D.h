@@ -114,9 +114,8 @@ public:
     int textWidth() const;
     int textWidth(int n) const;
     int textHeight() const;
-#if 0
-    void loadFont(const std::string& path);
-#endif
+    float measureText(const std::string &text) const;
+    bool loadFont(const std::string &path);
     void drawText(int x, int y, const std::string& str);
 
 
@@ -172,6 +171,8 @@ protected:
     NVGcontext* renderNvgContext_ = nullptr;
     NVGcontext* pickingNvgContext_ = nullptr;
     float pixelRatio_ = 1.0f;
+    std::vector<std::array<int, 4>> scissors_;
+    std::vector<std::shared_ptr<std::vector<unsigned char>>> fontData_;
 
     std::array<double, 4> fillColor_;
     std::array<double, 4> strokeColor_;

@@ -10,13 +10,13 @@
 namespace ptgl {
 namespace gui {
 
-class Renderer2D;
 
 class SpinSlider;
 typedef std::shared_ptr<SpinSlider> SpinSliderPtr;
 
 class SpinSlider : public AbstractSlider {
 public:
+    void layout() override;
     SpinSlider();
     SpinSlider(const std::string& text);
     virtual ~SpinSlider();

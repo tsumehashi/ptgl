@@ -48,8 +48,21 @@ void DockWidget::init()
 
 void DockWidget::titleBarButtonToggled(bool toggle)
 {
+    if (showWidgets_ == toggle)
+        return;
     showWidgets_ = toggle;
-
+    for (auto &w : addedWidgets_) {
+        if (!toggle) {
+            collapsedVisibility_[w.get()] = w->isLocallyVisible();
+            w->setVisible(false);
+        } else {
+            auto it = collapsedVisibility_.find(w.get());
+            if (it != collapsedVisibility_.end())
+                w->setVisible(it->second);
+        }
+    }
+    if (toggle)
+        collapsedVisibility_.clear();
 }
 
 void DockWidget::titleBarButtonPressed()
@@ -69,114 +82,64 @@ void DockWidget::clearWidgets()
     }
 
     addedWidgets_.clear();
+    collapsedVisibility_.clear();
 }
 
 void DockWidget::addWidget(WidgetPtr widget)
 {
+    if (!widget || std::find(addedWidgets_.begin(), addedWidgets_.end(), widget) != addedWidgets_.end())
+        return;
     Widget::addWidget(widget);
     addedWidgets_.push_back(widget);
+    if (!showWidgets_) {
+        collapsedVisibility_[widget.get()] = widget->isLocallyVisible();
+        widget->setVisible(false);
+    }
 }
 
 void DockWidget::removeWidget(WidgetPtr widget)
 {
-    const auto remvitr = std::remove(addedWidgets_.begin(), addedWidgets_.end(), widget);
-    for (auto itr = remvitr; itr != addedWidgets_.end(); ++itr) {
-        Widget::removeWidget(*itr);
+    if (auto it = collapsedVisibility_.find(widget.get()); it != collapsedVisibility_.end()) {
+        widget->setVisible(it->second);
+        collapsedVisibility_.erase(it);
     }
-
-    addedWidgets_.erase(remvitr, addedWidgets_.end());
+    Widget::removeWidget(widget);
+    addedWidgets_.erase(std::remove(addedWidgets_.begin(), addedWidgets_.end(), widget), addedWidgets_.end());
 }
 
-void DockWidget::render2DScene(ptgl::Renderer2D* r)
+void DockWidget::layout()
 {
-    this->updatePos();
-    int x = this->x();
-    int y = this->y();
-
-    int w = this->width();
-    int h = this->height();
-    int hy = 0;
-
+    updatePos();
+    int title = enableTitleBar_ ? titleBarHeight_ : 0;
+    titleBarButton_->setVisible(enableTitleBar_);
+    titleBarButton_->setLocalPos(width() - 20, titleBarHeight_ / 4);
+    int yy = title + padding_;
+    if (showWidgets_)
+        for (auto &child : addedWidgets_)
+            if (child->isLocallyVisible()) {
+                child->setSize(std::max(0, width() - 2 * padding_), child->height());
+                child->setLocalPos(padding_, yy);
+                yy += child->height() + padding_;
+            }
+    setHeight(showWidgets_ ? yy : title);
+}
+void DockWidget::render2DScene(ptgl::Renderer2D *r)
+{
     r->setRectMode(ptgl::Renderer2D::Mode::Corner);
     r->setStrokeWeight(1);
-    r->setStrokeColor(0.3, 0.3, 0.3);
-
-    // draw title bar
-    if (isEnabledTitleBar()) {
-        titleBarButton_->setVisible(true);
-        titleBarButton_->setLocalPos(w - 20, titleBarHeight_/4);
-
-        double tc[] = {0.2, 0.2, 0.2, 0.7};
-        r->setFillColor(tc[0], tc[1], tc[2], tc[3]);
-        r->drawRect(x, y, w, titleBarHeight_);
-
-        y += titleBarHeight_;
-        hy = titleBarHeight_;
-    } else {
-        titleBarButton_->setVisible(false);
+    r->setStrokeColor(theme().border);
+    r->setFillColor(theme().background);
+    int title = enableTitleBar_ ? titleBarHeight_ : 0;
+    if (height() > title)
+        r->drawRect(x(), y() + title, width(), height() - title);
+    if (enableTitleBar_) {
+        r->setFillColor(theme().titleBackground);
+        r->drawRect(x(), y(), width(), title);
     }
-
-    // draw widgets container
-    if (!showWidgets_) {
-        for (size_t i = 0; i < this->addedWidgets_.size(); ++i) {
-            WidgetPtr child = addedWidgets_[i];
-            if (child) {
-                child->setVisible(false);
-            }
-        }
-
-        // update size
-        setSize(w, hy);
-    } else {
-        for (size_t i = 0; i < this->addedWidgets_.size(); ++i) {
-            WidgetPtr child = addedWidgets_[i];
-            if (child) {
-                child->setVisible(true);
-            }
-        }
-
-        int padx = padding_;
-        int pady = padding_;
-        int yy = hy + pady;
-        w = this->width();
-        h = pady;
-
-        for (size_t i = 0; i < this->addedWidgets_.size(); ++i) {
-            WidgetPtr child = addedWidgets_[i];
-            if (child) {
-                int cw = this->width() - padx*2;
-                child->setSize(cw, child->height());
-                child->setLocalPos(padx, yy);
-                yy += pady + child->height();
-                h += child->height() + pady;
-            }
-        }
-
-        // draw background
-        if (isEnabledTitleBar()) {
-            r->setFillColor(0.6,0.6,0.6, 0.5);
-
-            r->setStrokeColor(0.3, 0.3, 0.3);
-            r->setStrokeWeight(1);
-
-            r->drawRect(x,y,w,h);
-        }
-
-        // update size
-        int uw = x+w - this->x();
-        int uh = y+h - this->y();
-        setSize(uw, uh);
-    }
-
-    // render text
-    if (isEnabledTitleBar() && !windowTitle_.empty()) {
-        int textSize = titleBarHeight_ * 0.9;
-        int tx = this->x() + 10;
-        int ty = this->y() + titleBarHeight_ - (titleBarHeight_ - textSize)/2;
-
-        r->setTextColor(1,1,1);
-        r->setTextSize(textSize);
-        r->drawText(tx, ty, windowTitle_);
+    if (enableTitleBar_ && !windowTitle_.empty()) {
+        r->setTextColor(theme().titleText);
+        r->setTextSize(theme().pixels(theme().fontSize));
+        r->drawText(x() + 10, y() + titleBarHeight_ - 3, windowTitle_);
     }
 }
 
