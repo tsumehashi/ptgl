@@ -137,6 +137,7 @@ public:
     }
     const StreamBuffer& data() const noexcept { return data_; }
     void clear();
+    void breakBeforeNextSample() noexcept { data_.breakBeforeNextSample(); }
     void setFollowLatest(bool enabled = true) noexcept { live_ = enabled; dragging_ = std::size_t(-1); }
     bool isFollowingLatest() const noexcept { return live_; }
     // Keep following the newest sample while wheel-zooming the time axis.

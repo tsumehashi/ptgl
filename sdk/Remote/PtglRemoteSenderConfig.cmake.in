@@ -1,0 +1,7 @@
+@PACKAGE_INIT@
+if(NOT WIN32)
+    include(CMakeFindDependencyMacro)
+    find_dependency(Threads)
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/PtglRemoteSenderTargets.cmake")
+check_required_components(PtglRemoteSender)

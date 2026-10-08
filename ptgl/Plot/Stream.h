@@ -34,6 +34,8 @@ public:
     StreamBuffer(std::size_t channels, std::size_t capacity);
     bool append(double time, const float* values, std::size_t count) noexcept;
     void clear() noexcept;
+    // Mark a discontinuity without losing either neighboring sample.
+    void breakBeforeNextSample() noexcept { pendingBreak_ = true; }
 
     std::size_t channels() const noexcept { return channels_; }
     std::size_t capacity() const noexcept { return capacity_; }
@@ -68,6 +70,8 @@ private:
     std::size_t channels_, capacity_, size_ = 0, next_ = 0, leaves_ = 1;
     std::uint64_t overwritten_ = 0;
     std::vector<double> times_;
+    std::vector<std::uint8_t> breaks_;
+    bool pendingBreak_ = false;
     double time_origin_ = 0;
     std::vector<float> values_;
     std::vector<Summary> tree_;

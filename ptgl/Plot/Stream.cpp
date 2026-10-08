@@ -37,6 +37,7 @@ StreamBuffer::StreamBuffer(std::size_t channels, std::size_t capacity)
     if (channels > values_.max_size() / capacity || channels > tree_.max_size() / (2 * leaves_))
         throw std::length_error("ptgl::plot: buffer size overflow");
     times_.resize(capacity);
+    breaks_.resize(capacity);
     values_.resize(channels * capacity);
     tree_.resize(channels * 2 * leaves_);
 }
@@ -44,12 +45,13 @@ StreamBuffer::StreamBuffer(std::size_t channels, std::size_t capacity)
 void StreamBuffer::clear() noexcept {
     size_ = next_ = 0;
     overwritten_ = 0;
+    pendingBreak_ = false;
     std::fill(tree_.begin(), tree_.end(), Summary{});
 }
 
 std::size_t StreamBuffer::storageBytes() const noexcept {
     return times_.capacity() * sizeof(double) + values_.capacity() * sizeof(float) +
-           tree_.capacity() * sizeof(Summary);
+           tree_.capacity() * sizeof(Summary) + breaks_.capacity();
 }
 
 std::size_t StreamBuffer::slot(std::size_t logical) const noexcept {
@@ -70,6 +72,8 @@ bool StreamBuffer::append(double time, const float* values, std::size_t count) n
     if (!size_) time_origin_ = time;
     const auto physical = next_;
     times_[physical] = time;
+    breaks_[physical] = pendingBreak_ ? 1 : 0;
+    pendingBreak_ = false;
     for (std::size_t c = 0; c < channels_; ++c)
         values_[c * capacity_ + physical] = std::isfinite(values[c]) ? values[c] : std::numeric_limits<float>::quiet_NaN();
     if (size_ < capacity_) ++size_; else ++overwritten_;
@@ -81,7 +85,7 @@ bool StreamBuffer::append(double time, const float* values, std::size_t count) n
 Point StreamBuffer::sample(std::size_t channel, std::size_t index) const {
     if (channel >= channels_ || index >= size_) throw std::out_of_range("ptgl::plot: sample index");
     const auto p = slot(index);
-    return {times_[p], value(channel, p), false};
+    return {times_[p], value(channel, p), breaks_[p] != 0};
 }
 
 std::size_t StreamBuffer::lowerBound(double time) const noexcept {
@@ -112,7 +116,7 @@ bool StreamBuffer::nearest(std::size_t channel, double time, Point& result) cons
 
 StreamBuffer::Summary StreamBuffer::one(std::size_t channel, std::size_t p) const noexcept {
     if (!std::isfinite(value(channel, p))) return {none, none, 1};
-    return {static_cast<std::uint32_t>(p), static_cast<std::uint32_t>(p), 0};
+    return {static_cast<std::uint32_t>(p), static_cast<std::uint32_t>(p), breaks_[p]};
 }
 
 StreamBuffer::Summary StreamBuffer::merge(std::size_t c, Summary a, Summary b) const noexcept {
@@ -196,7 +200,7 @@ void StreamBuffer::select(std::size_t c, Range view, std::size_t pixels, std::ve
             const auto p = slot(i);
             const auto v = value(c, p);
             if (!std::isfinite(v)) { gap = true; continue; }
-            out.push_back({times_[p], v, gap});
+            out.push_back({times_[p], v, gap || breaks_[p] != 0});
             gap = false;
         }
         return;
@@ -211,7 +215,13 @@ void StreamBuffer::select(std::size_t c, Range view, std::size_t pixels, std::ve
         auto run = a;
         Summary finite;
         for (auto i = a; i < b; ++i) {
-            auto item = one(c, slot(i));
+            const auto physical = slot(i);
+            if (breaks_[physical]) {
+                emitFinite(c, run, i, finite, pending_break, out);
+                pending_break = true; finite = {}; run = i;
+            }
+            auto item = one(c, physical);
+            item.missing = std::isfinite(value(c, physical)) ? 0 : 1;
             if (item.missing) {
                 emitFinite(c, run, i, finite, pending_break, out);
                 pending_break = true;

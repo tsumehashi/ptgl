@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ptgl Remote</title>
+<style>html,body{margin:0;height:100%;background:#f6f8fa;font:14px system-ui;color:#243040}form{height:44px;display:flex;align-items:center;gap:12px;padding:0 14px;box-sizing:border-box;border-bottom:1px solid #ccd5df}input,select,button{font:inherit;padding:3px 7px}input{width:300px}canvas{display:block;width:100%;height:calc(100% - 44px)}#status{margin-left:auto}</style></head>
+<body><form method="get"><strong>ptgl Remote</strong><input name="url" id="url" aria-label="WebSocket URL"><select name="view" id="view" aria-label="View"><option value="1">3D + GUI</option><option value="2">32 channels</option><option value="3">XY trajectory</option></select><button>Connect</button><span id="status">Loading</span></form><canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+<script>
+const params=new URLSearchParams(location.search);
+document.querySelector('#url').value=params.get('url')||'ws://127.0.0.1:9002';
+document.querySelector('#view').value=params.get('view')||'1';
+var Module={canvas:document.querySelector('#canvas'),arguments:['--url',document.querySelector('#url').value,'--view',document.querySelector('#view').value],
+ print:console.log,printErr:console.error,setStatus:s=>document.querySelector('#status').textContent=s||'Viewer ready',
+ onRuntimeInitialized:()=>document.querySelector('#status').textContent='Viewer ready'};
+</script>{{{ SCRIPT }}}</body></html>

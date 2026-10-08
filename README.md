@@ -1080,3 +1080,24 @@ updating because `VertexSet` and renderer class layouts have changed.
 
 ## License
 Licensed under the MIT license. see LICENSE for details.
+
+## Remote Extension
+
+The C++17 header-only sender in `ptgl::remote` has no rendering dependency.
+The receiver in `ptgl::ext::remote` is an optional part of the single ptgl
+library, enabled with `PTGL_ENABLE_REMOTE_EXTENSION=ON` (default OFF).
+
+Remote supports basic 3D primitives, GUI definitions and return events,
+time-series plots, static XY/scatter, and bounded trajectories. Native transport
+uses vendored WebSocket++/standalone Asio; the Emscripten receiver uses browser
+WebSockets. The initial transport supports plain `ws://`.
+
+Set `PTGL_BUILD_REMOTE_DEMO=ON` for the sender/viewer examples and
+`PTGL_BUILD_REMOTE_TESTS=ON` for protocol and loopback tests. The sender SDK can
+be configured independently with `cmake -S sdk/Remote -B build/RemoteSdk` and
+installed without finding Eigen, GLFW, GLEW, OpenGL, or ptgl binaries.
+Consumers use the header-only CMake target `ptgl::remoteSender`.
+
+See [Remote usage and examples](docs/RemoteUsage.md) for build/run commands,
+API examples, and current limitations, and [Remote design](docs/RemoteDesign.md)
+for protocol, ownership, flow control, and reconnection behavior.
